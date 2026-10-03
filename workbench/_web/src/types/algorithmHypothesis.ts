@@ -137,4 +137,6 @@ export interface AlgorithmHypothesisChartData {
         token: number | null;
         full: boolean;
     };
+    /** The paper walkthrough: open, and on which step. */
+    walkthrough?: { open: boolean; step: number; done?: string[] };
 }

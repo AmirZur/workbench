@@ -51,6 +51,7 @@ interface AlgorithmPanelProps {
     /** Token clicks in the grid mark special tokens. */
     markingSpecials: boolean;
     onToggleMarking: () => void;
+    onWalkthrough: () => void;
     onEditVariable: (id: string) => void;
     onLoadExample: (kind: ExampleKind) => void;
     onUseCurrentPrompt: () => void;
@@ -84,6 +85,7 @@ export function AlgorithmPanel({
     onRemoveInput,
     markingSpecials,
     onToggleMarking,
+    onWalkthrough,
     onEditVariable,
     onLoadExample,
     onUseCurrentPrompt,
@@ -452,6 +454,16 @@ export function AlgorithmPanel({
                     <Label>Examples from the paper</Label>
                     <p className="text-xs text-muted-foreground">
                         Gur-Arieh, Geva &amp; Geiger (2025). Placed on the current prompt and grid.
+                        The Mixed example&apos;s weights are illustrative, not the paper&apos;s
+                        fitted ones.{" "}
+                        <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0 text-xs"
+                            onClick={onWalkthrough}
+                        >
+                            Take the walkthrough
+                        </Button>
                     </p>
                     <div className="grid grid-cols-2 gap-2">
                         {EXAMPLE_KINDS.map((kind) =>

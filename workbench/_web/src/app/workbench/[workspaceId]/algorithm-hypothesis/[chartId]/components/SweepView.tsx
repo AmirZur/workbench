@@ -47,6 +47,8 @@ interface SweepViewProps {
     onStateChange: (state: SweepState) => void;
     onSaveInput: (text: string) => void;
     onModeChange: (mode: AlgorithmHypothesisMode) => void;
+    walkthroughOpen: boolean;
+    onWalkthrough: () => void;
     mobile?: boolean;
 }
 
@@ -159,6 +161,8 @@ export default function SweepView({
     onStateChange,
     onSaveInput,
     onModeChange,
+    walkthroughOpen,
+    onWalkthrough,
     mobile = false,
 }: SweepViewProps) {
     const modelName = definition.grid.kind === "model" ? definition.grid.model : undefined;
@@ -342,7 +346,12 @@ export default function SweepView({
         <div className="flex h-full min-h-0 flex-col">
             <div className="p-3 border-b flex items-center justify-between gap-2">
                 <h2 className="text-sm pl-2 font-medium whitespace-nowrap">Algorithm Hypothesis</h2>
-                <ModeTabs mode="sweep" onModeChange={onModeChange} />
+                <ModeTabs
+                    mode="sweep"
+                    onModeChange={onModeChange}
+                    walkthroughOpen={walkthroughOpen}
+                    onWalkthrough={onWalkthrough}
+                />
             </div>
             <div className="flex flex-col gap-2 border-b px-3 py-2">
                 <InputRow

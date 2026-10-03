@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -59,6 +59,8 @@ import InterventionView, {
     type InterventionState,
 } from "./InterventionView";
 import SweepView, { defaultSweepState, type SweepState } from "./SweepView";
+import { Walkthrough } from "./Walkthrough";
+import { WALKTHROUGH_MODEL, WALKTHROUGH_TARGET, paperWalkthroughSteps } from "./paperWalkthrough";
 import { VariablePanel } from "./VariablePanel";
 import {
     addRef,
@@ -113,6 +115,11 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
     const [mode, setMode] = useState<AlgorithmHypothesisMode>("edit");
     const [intervention, setIntervention] = useState<InterventionState | null>(null);
     const [sweep, setSweep] = useState<SweepState | null>(null);
+    const [walkthrough, setWalkthrough] = useState<{
+        open: boolean;
+        step: number;
+        done?: string[];
+    } | null>(null);
     const hydratedChart = useRef<string | null>(null);
     useEffect(() => {
         if (!chart || hydratedChart.current === chart.id) return;
@@ -122,6 +129,7 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
         setMode(d?.mode === "intervene" || d?.mode === "sweep" ? d.mode : "edit");
         setIntervention(d?.intervention ?? null);
         setSweep(d?.sweep ?? null);
+        setWalkthrough(d?.walkthrough ?? null);
         hydratedChart.current = chart.id;
     }, [chart]);
 
@@ -145,8 +153,9 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
             mode,
             ...(intervention ? { intervention } : {}),
             ...(sweep ? { sweep } : {}),
+            ...(walkthrough ? { walkthrough } : {}),
         }),
-        [prompt, view, mode, intervention, sweep],
+        [prompt, view, mode, intervention, sweep, walkthrough],
     );
 
     useEffect(() => {
@@ -609,8 +618,109 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
         templateTokens.length !== tokens.length &&
         definition.variables.length > 0;
 
-    if (mode === "intervene" && intervention)
+    // ------------------------------------------------------ paper walkthrough
+
+    const toggleWalkthrough = () =>
+        setWalkthrough((w) => ({ ...w, open: !w?.open, step: w?.step ?? 0 }));
+
+    /** Step 1: a new algorithm on gemma-2-2b-it, so the user's own stay as they are. */
+    const startWalkthrough = async () => {
+        const grid = GRID_OPTIONS.find((o) => o.id === WALKTHROUGH_MODEL)?.grid;
+        if (!grid) return;
+        flush();
+        try {
+            const row = await createAlgorithm({
+                workspaceId,
+                definition: { ...blankAlgorithm("Paper walkthrough", WALKTHROUGH_TARGET), grid },
+            });
+            setDraft(null);
+            setPrompt(WALKTHROUGH_TARGET);
+            setMode("edit");
+            const next = { open: true, step: 1 };
+            setWalkthrough(next);
+            await writeChartData({
+                ...chartState(row.id),
+                prompt: WALKTHROUGH_TARGET,
+                mode: "edit",
+                walkthrough: next,
+            });
+        } catch {
+            toast.error("Couldn't start the walkthrough.");
+        }
+    };
+
+    const walkthroughSteps = walkthrough?.open
+        ? paperWalkthroughSteps({
+              definition,
+              prompt,
+              tokens,
+              tokensLoading,
+              mode,
+              versionState,
+              problemCount: problems.length,
+              intervention,
+              sweep,
+              start: () => void startWalkthrough(),
+              loadExample: onLoadExample,
+              save: () => void onSaveVersion(),
+              intervene: (state) => {
+                  setIntervention(state);
+                  setMode("intervene");
+              },
+              sweepWith: (state) => {
+                  setSweep(state);
+                  setMode("sweep");
+              },
+          })
+        : [];
+    // A step stays checked once its state has been in place.
+    const newlyDone = walkthroughSteps
+        .filter((st) => st.done && !walkthrough?.done?.includes(st.id))
+        .map((st) => st.id);
+    if (walkthrough && newlyDone.length)
+        queueMicrotask(() =>
+            setWalkthrough((w) => (w ? { ...w, done: [...(w.done ?? []), ...newlyDone] } : w)),
+        );
+    const walkthroughPanel = walkthrough?.open ? (
+        <Walkthrough
+            title="Paper walkthrough"
+            steps={walkthroughSteps.map((st) => ({
+                ...st,
+                done: st.done || !!walkthrough.done?.includes(st.id),
+            }))}
+            index={walkthrough.step}
+            onIndexChange={(step) => setWalkthrough({ ...walkthrough, open: true, step })}
+            onClose={() => setWalkthrough({ ...walkthrough, open: false })}
+        />
+    ) : null;
+
+    /** The mode's view, with the walkthrough docked beside it when it's open. */
+    const dock = (content: ReactNode) => {
+        if (!walkthroughPanel) return content;
+        if (mobile)
+            return (
+                <div className="flex flex-col gap-2">
+                    {content}
+                    <div className="rounded border bg-secondary/80 dark:bg-secondary/50">
+                        {walkthroughPanel}
+                    </div>
+                </div>
+            );
         return (
+            <div className="flex h-full min-w-0 flex-1 gap-2">
+                {content}
+                <aside
+                    aria-label="Paper walkthrough"
+                    className="w-80 shrink-0 rounded border bg-secondary/80 dark:bg-secondary/50"
+                >
+                    {walkthroughPanel}
+                </aside>
+            </div>
+        );
+    };
+
+    if (mode === "intervene" && intervention)
+        return dock(
             <InterventionView
                 workspaceId={workspaceId}
                 algorithmId={algorithmId}
@@ -623,12 +733,14 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
                 onStateChange={setIntervention}
                 onSaveInput={onSaveInput}
                 onModeChange={onModeChange}
+                walkthroughOpen={!!walkthrough?.open}
+                onWalkthrough={toggleWalkthrough}
                 mobile={mobile}
-            />
+            />,
         );
 
     if (mode === "sweep" && sweep)
-        return (
+        return dock(
             <SweepView
                 workspaceId={workspaceId}
                 algorithmId={algorithmId}
@@ -639,8 +751,10 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
                 onStateChange={setSweep}
                 onSaveInput={onSaveInput}
                 onModeChange={onModeChange}
+                walkthroughOpen={!!walkthrough?.open}
+                onWalkthrough={toggleWalkthrough}
                 mobile={mobile}
-            />
+            />,
         );
 
     const gridPanel = (
@@ -648,6 +762,8 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
             <GridToolbar
                 mode={mode}
                 onModeChange={onModeChange}
+                walkthroughOpen={!!walkthrough?.open}
+                onWalkthrough={toggleWalkthrough}
                 prompt={prompt}
                 onPromptChange={setPrompt}
                 savedInputs={definition.inputs ?? []}
@@ -791,6 +907,9 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
                 onRemoveInput={onRemoveInput}
                 markingSpecials={markingSpecials}
                 onToggleMarking={() => setMarkingSpecials((m) => !m)}
+                onWalkthrough={() =>
+                    setWalkthrough({ ...walkthrough, open: true, step: walkthrough?.step ?? 0 })
+                }
                 onEditVariable={(id) => {
                     const v = definition.variables.find((x) => x.id === id);
                     if (v) setDraft(draftFromVariable(definition, v));
@@ -802,7 +921,7 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
         );
 
     if (mobile) {
-        return (
+        return dock(
             <div className="flex flex-col gap-2">
                 <div className="min-h-[60vh] rounded border bg-secondary/80 dark:bg-secondary/50">
                     {gridPanel}
@@ -810,11 +929,11 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
                 <div className="rounded border bg-secondary/80 dark:bg-secondary/50">
                     {sidePanel}
                 </div>
-            </div>
+            </div>,
         );
     }
 
-    return (
+    return dock(
         <ResizablePanelGroup
             direction="horizontal"
             className="flex h-full min-w-0 flex-1 rounded border bg-secondary/80 dark:bg-secondary/50"
@@ -826,6 +945,6 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
             <ResizablePanel id="panel" order={2} defaultSize={30} minSize={22} className="min-w-0">
                 {sidePanel}
             </ResizablePanel>
-        </ResizablePanelGroup>
+        </ResizablePanelGroup>,
     );
 }

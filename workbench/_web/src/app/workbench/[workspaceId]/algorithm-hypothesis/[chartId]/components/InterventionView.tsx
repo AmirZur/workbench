@@ -55,6 +55,8 @@ interface InterventionViewProps {
     onStateChange: (state: InterventionState) => void;
     onSaveInput: (text: string) => void;
     onModeChange: (mode: AlgorithmHypothesisMode) => void;
+    walkthroughOpen: boolean;
+    onWalkthrough: () => void;
     mobile?: boolean;
 }
 
@@ -89,6 +91,8 @@ export default function InterventionView({
     onStateChange,
     onSaveInput,
     onModeChange,
+    walkthroughOpen,
+    onWalkthrough,
     mobile = false,
 }: InterventionViewProps) {
     const modelName = definition.grid.kind === "model" ? definition.grid.model : undefined;
@@ -297,7 +301,12 @@ export default function InterventionView({
         <div className="flex h-full min-h-0 flex-col">
             <div className="p-3 border-b flex items-center justify-between gap-2">
                 <h2 className="text-sm pl-2 font-medium whitespace-nowrap">Algorithm Hypothesis</h2>
-                <ModeTabs mode="intervene" onModeChange={onModeChange} />
+                <ModeTabs
+                    mode="intervene"
+                    onModeChange={onModeChange}
+                    walkthroughOpen={walkthroughOpen}
+                    onWalkthrough={onWalkthrough}
+                />
             </div>
             <div className="flex flex-col gap-2 border-b px-3 py-2">
                 <InputRow
@@ -514,7 +523,9 @@ export default function InterventionView({
 interface SummaryRow {
     algorithm: ComparedAlgorithm;
     target: Value;
-    counterfactual: Value | null;
+    /** Whether anything was swapped; the counterfactual can itself be ∅. */
+    ok: boolean;
+    counterfactual: Value;
     reason: string | null;
 }
 
@@ -560,7 +571,8 @@ function InterventionSummary({
             return {
                 algorithm,
                 target: outputOf(algorithm.definition, r.target),
-                counterfactual: r.ok ? r.output : null,
+                ok: r.ok,
+                counterfactual: r.output,
                 reason: r.reason,
             };
         });
@@ -685,7 +697,7 @@ function InterventionSummary({
                                                     </span>
                                                 </td>
                                                 <td className="py-1.5 text-right font-mono align-top whitespace-nowrap">
-                                                    {r.counterfactual === null ? (
+                                                    {!r.ok ? (
                                                         <span
                                                             className="font-sans text-muted-foreground"
                                                             title={r.reason ?? undefined}

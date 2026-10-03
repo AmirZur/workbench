@@ -33,6 +33,8 @@ import { ModeTabs } from "./ModeTabs";
 interface GridToolbarProps {
     mode: AlgorithmHypothesisMode;
     onModeChange: (mode: AlgorithmHypothesisMode) => void;
+    walkthroughOpen: boolean;
+    onWalkthrough: () => void;
     prompt: string;
     onPromptChange: (prompt: string) => void;
     /** Prompts saved with the algorithm. */
@@ -47,6 +49,8 @@ interface GridToolbarProps {
 export function GridToolbar({
     mode,
     onModeChange,
+    walkthroughOpen,
+    onWalkthrough,
     prompt,
     onPromptChange,
     savedInputs,
@@ -68,7 +72,12 @@ export function GridToolbar({
             <div className="p-3 border-b flex items-center justify-between">
                 <h2 className="text-sm pl-2 font-medium whitespace-nowrap">Algorithm Hypothesis</h2>
                 <div className="flex items-center gap-2">
-                    <ModeTabs mode={mode} onModeChange={onModeChange} />
+                    <ModeTabs
+                        mode={mode}
+                        onModeChange={onModeChange}
+                        walkthroughOpen={walkthroughOpen}
+                        onWalkthrough={onWalkthrough}
+                    />
                     <Select value={gridId} onValueChange={onGridChange}>
                         <SelectTrigger size="sm" aria-label="Grid">
                             <SelectValue />
