@@ -7,13 +7,13 @@
 
 <div class="page">
   <header class="doc-header">
-    <div class="eyebrow"><span>Workbench</span><span aria-hidden="true">·</span><span>Design doc</span><span class="pill">Draft 0.4</span></div>
+    <div class="eyebrow"><span>Workbench</span><span aria-hidden="true">·</span><span>Design doc</span><span class="pill">Draft 0.5</span></div>
     <h1>Algorithm Hypothesis</h1>
     <p class="lede">Draw a hypothesized algorithm on a transformer's layers × tokens grid, then run interchange interventions on it with the same gestures Patch Lens uses on the network.</p>
     <div class="meta">
       <span>Owner <b>Amir Zur</b></span>
       <span>Updated <b>3 Oct 2026</b></span>
-      <span>Status <b>P0–P2 done · P3–P4 built, in play-testing</b></span>
+      <span>Status <b>P0–P2 done · P3–P6 built, in play-testing</b></span>
       <span>Running example <b><a href="https://arxiv.org/abs/2510.06182">Gur-Arieh, Geva &amp; Geiger, Mixing Mechanisms</a></b></span>
     </div>
   </header>
@@ -47,16 +47,18 @@
       <section class="doc" id="status">
         <div class="callout status">
           <span class="field-label">Status, 3 October 2026</span>
-          <p><b>P0–P2 done.</b> Decisions in <a href="#questions">§12</a>; the Python package (43 tests) and the editor in workbench (branch <span class="mono">feat/algorithm-hypothesis</span>, uncommitted).</p>
-          <p><b>P3 and P4 built, ready to play-test.</b> In the same chart, <em>Edit</em> builds the algorithm and <em>Intervene</em> runs interchange interventions on it.</p>
+          <p><b>Code:</b> <a href="https://github.com/AmirZur/workbench/tree/feat/algorithm-hypothesis">AmirZur/workbench</a>, branch <span class="mono">feat/algorithm-hypothesis</span> (a fork of ndif-team/workbench). The README's “Algorithm Hypothesis” section has the steps to run it locally; the Python package, golden files and this doc live in <span class="mono">algorithm-hypothesis/</span>.</p>
+          <p><b>P0–P2 done; P3–P6 built, ready to play-test.</b> One chart, three modes: <em>Edit</em>, <em>Intervene</em>, <em>Sweep</em>.</p>
           <ul>
-            <li><b>Python in the browser</b> (§9.2): custom functions run in a Pyodide worker, one call at a time, with errors shown in place. The editor uses CodeMirror.</li>
-            <li><b>Saved inputs</b>: prompts saved with the algorithm, offered as sources and targets.</li>
-            <li><b>Cell intervention</b> (§6): source, target and counterfactual grids; drag a cell, or click one and then another; the intervention arrow; the same intervention on every algorithm in the workspace and the paper's examples; saved with the chart.</li>
-            <li><b>Color and tags</b> (§4.2): variables are black by default, and each can have its own color and tags. The mixed example colors each variable by the algorithm it serves.</li>
-            <li><b>New primitives</b> (§4.6): Position ID numbers the algorithm's designated special tokens (the names) and stores a position ID : name pair, so the recalled “Tim” gets 4:Tim. The set is now Position ID, Copy, Pair, Retrieve, Index, KeyOf, ValueOf, Mixture, Constant and Custom. Retrieve by value dereferences.</li>
+            <li><b>Saving algorithms</b> (§5): edits autosave as a draft; <em>Save</em> marks an algorithm complete. <em>New</em> starts another. Intervene and Sweep compare the saved version of every saved algorithm with this one and the paper's examples.</li>
+            <li><b>Default names and copy-paste</b> (§5): a new variable is named after its function (PosID1, Copy1, …, Custom1). Copy a variable, custom code included, and paste it into another cell, or Alt-drag it.</li>
+            <li><b>P3, Python and inputs</b> (§9.2): custom functions run in the browser with Pyodide, with errors shown in place; saved inputs per algorithm.</li>
+            <li><b>P4, cell intervention</b> (§6).</li>
+            <li><b>P5, token sweep</b> (§7): one token at every layer, or every position at once, for every algorithm; same position only (Q16).</li>
+            <li><b>P6, paper demo</b> (§10): a docked walkthrough of the paper's Figure 1 task on gemma-2-2b-it.</li>
+            <li>Earlier this week: types, glyphs, color and tags, special tokens, and the primitives Position ID, Copy, Pair, Retrieve, Index, KeyOf, ValueOf, Mixture, Constant and Custom (§4).</li>
           </ul>
-          <p>Schema v3 (§4.7) records these. The mockups below follow the same primitives and examples; Mockup 2 was the design for P4.</p>
+          <p>Decisions Q16–Q21 are recorded in <a href="#questions">§12</a>. The mockups below are the designs; the built tool follows them.</p>
         </div>
       </section>
 
@@ -352,7 +354,9 @@
             <li><strong>Fill its arguments</strong> by choosing a slot and clicking tokens or variables in the grid. Each slot shows its name and type, and each reference shows its type's glyph and draws an arrow into the cell. A reference that breaks a rule or doesn't fit the slot's type is refused, with the reason.</li>
             <li><strong>See its value</strong> on the current prompt as you build it. A custom function's value appears once Python has run it, or its error appears in place.</li>
             <li><strong>Mark the output</strong> at the last layer and last token. Until one exists, the status bar says what's missing.</li>
-            <li><strong>Drag variables to move them</strong>, edit or delete them from the grid or the variable list, and switch prompts to see their values on other inputs. Everything autosaves. Export gives JSON that <span class="mono">algorithm_hypothesis</span> compiles to causalab.</li>
+            <li><strong>Drag variables to move them</strong>, edit or delete them from the grid or the variable list, and switch prompts to see their values on other inputs. A new variable is named after its function (PosID1, Copy1, …), until you type a name.</li>
+            <li><strong>Copy a variable</strong> (Copy in its panel, or Ctrl/⌘ C) and paste it into another cell (Paste here, or Ctrl/⌘ V), or Alt-drag it (Option on a Mac). The copy keeps its function, custom code, arguments, type, color and tags, takes the next free name, and flags any argument that breaks a rule at the new cell.</li>
+            <li><strong>Save it when it's complete.</strong> Edits autosave as a draft; <em>Save</em> stores the version other views compare against, and the panel shows “Not saved yet”, “Saved” or “Unsaved changes” (with Revert). <em>New</em> starts another algorithm, and <em>Open</em> lists saved algorithms and drafts. Export gives JSON that <span class="mono">algorithm_hypothesis</span> compiles to causalab.</li>
           </ol>
         </div>
         <p class="mock-caption"><b>Mockup 1</b><span class="live">Live</span><span>Click a chip to open its panel: try q_pos (Position ID), then double-click its code. The Mixed example shows variables colored by the algorithm they serve.</span></p>
@@ -375,7 +379,7 @@
           <p>Two inputs, two grids, one drag: the Patch Lens gesture applied to the algorithm. Dropping a source cell on a target cell runs an interchange intervention. A third grid, the <em>counterfactual</em>, tints every changed value purple, and the summary shows the counterfactual output next to the target's own output.</p>
           <p>It differs from Patch Lens in two ways. The cells hold named values rather than logit-lens readouts, so the summary can say exactly what was swapped (<code>P: 4 → 2</code>) and why the output moved. And because an intervention costs microseconds, the summary also runs the same intervention on every saved algorithm. That table is the paper's argument at a glance: one drag, three counterfactual outputs.</p>
           <p>Only variables with the same name are swapped (<a class="qref" href="#q-cross">Q9</a>). A drag between cells that share no variable is refused, with a message.</p>
-          <p><strong>Built in P4.</strong> In workbench, <em>Intervene</em> switches the chart to this view. The source and target inputs come from the algorithm's saved inputs or the examples, and a button swaps them. The three grids scroll together, so the intervention arrow (cyan dot at the source, pink at the target) stays attached. Clicking a cell picks it, which also works on touch screens; the token row is the embedding layer. The table runs the intervention on every algorithm in the workspace with the same grid, then on the paper's four examples placed on this template, with “no swap” where the cells share no variable. The inputs and the intervention are saved with the chart, so a reload restores them. Custom functions run in Python here too.</p>
+          <p><strong>Built in P4.</strong> In workbench, <em>Intervene</em> switches the chart to this view. The source and target inputs come from the algorithm's saved inputs or the examples, and a button swaps them. The three grids scroll together, so the intervention arrow (cyan dot at the source, pink at the target) stays attached. Clicking a cell picks it, which also works on touch screens; the token row is the embedding layer. The table runs the intervention on this algorithm, on the saved version of every saved algorithm in the workspace with the same grid, and on the paper's four examples placed on this template, with “no swap” where the cells share no variable. The inputs and the intervention are saved with the chart, so a reload restores them. Custom functions run in Python here too.</p>
         </div>
         <p class="mock-caption"><b>Mockup 2</b><span class="live">Live</span><span>The design for P4, now built in workbench. Opens with the paper's intervention applied: last token, L5.</span></p>
         <div class="mock" id="mock-cell-intervention" aria-label="Cell intervention mockup"></div>
@@ -399,14 +403,24 @@
           </ul>
           <p>Now drag “Ann” (14) onto “Tim” (14). From the embedding layer to L2, the intervention swaps the token itself, so every algorithm answers as if asked about Ann (ale). At L3–L4 it swaps what the query token has already retrieved, and the algorithms separate again.</p>
         </div>
-        <p class="mock-caption"><b>Mockup 3</b><span class="live">Live</span><span>Preview of P5. Opens on “?” → “?”. Drag a source token onto a target token, or click one and then the other.</span></p>
+        <div class="prose">
+          <p><strong>Built in P5.</strong> <em>Sweep</em> is the chart's third mode.</p>
+          <ul>
+            <li><strong>Picking the token:</strong> drag a source token onto the same token of the target, or click a token. Sweeps compare the same position (<a class="qref" href="#q-sweep">Q16</a>), so a drop on a different token is refused with a message.</li>
+            <li><strong>Strips:</strong> each algorithm (this one, the saved ones and the paper's examples) gets a strip of counterfactual outputs from the top layer down to the embedding row.</li>
+            <li><strong>Colors:</strong> each output keeps its color in every view; the target's own output is gray, faded cells had nothing to swap, and ∅ is hatched.</li>
+            <li><strong>Summary:</strong> the side panel says where each algorithm's output changes, e.g. “jam at L5–L6 · pie at L7”.</li>
+            <li><strong>Full grid:</strong> maps every position at once when the inputs have the same number of tokens.</li>
+          </ul>
+        </div>
+        <p class="mock-caption"><b>Mockup 3</b><span class="live">Live</span><span>The design for P5, now built. Opens on “?” → “?”.</span></p>
         <div class="mock" id="mock-sweep" aria-label="Token sweep mockup"></div>
         <div class="prose">
           <p><strong>Design notes.</strong></p>
           <ul>
             <li><strong>Color encodes the counterfactual output, not the algorithm.</strong> The legend says which algorithm predicts each value for the current inputs. Unchanged is gray; ∅ is hatched.</li>
             <li><strong>Lighter cells mean nothing lives there.</strong> No intervention ran, which is different from an intervention that left the output unchanged.</li>
-            <li><strong>Token to a different token.</strong> Under the same-name rule, a source token dragged onto a different target token shares no variables, so P5 needs a decision here (<a class="qref" href="#q-sweep">Q16</a>).</li>
+            <li><strong>Token to a different token.</strong> Under the same-name rule, a source token dragged onto a different target token shares no variables, so the built sweep compares the same position only (<a class="qref" href="#q-sweep">Q16</a>).</li>
             <li><strong>The dashed Network column</strong> marks where Phase 7 puts the matching Patch Lens sweep.</li>
           </ul>
         </div>
@@ -497,7 +511,7 @@ print(compiled.source)   # the generated @mechanism, with P__L6 = V(P, ...) rela
 
         <h3 class="sub"><span class="num">9.4</span>Persistence</h3>
         <div class="prose">
-          <p>Decision (<a class="qref" href="#q-store">Q11</a>): a workspace-scoped <code>algorithms</code> table (id, workspaceId, name, definition JSON, timestamps), mirrored in <code>schema.pg.ts</code> and <code>schema.sqlite.ts</code>. A chart stores <code>{ algorithmId, prompt, view }</code>, so several charts can share an algorithm, and the visualizers in P4–P5 will open the same rows. Copying a chart copies its algorithm.</p>
+          <p>Decision (<a class="qref" href="#q-store">Q11</a>): a workspace-scoped <code>algorithms</code> table, mirrored in <code>schema.pg.ts</code> and <code>schema.sqlite.ts</code>. Each row holds the working copy (<code>definition</code>, autosaved on every edit) and the version saved as complete (<code>saved_definition</code> and <code>saved_at</code>, empty for a draft). A chart stores its algorithm's id, the prompt and view, the mode, and each view's inputs and settings (the intervention, the sweep, the walkthrough), so a reload restores them. Copying a chart copies its algorithm, as a draft.</p>
         </div>
       </section>
 
@@ -508,7 +522,7 @@ print(compiled.source)   # the generated @mechanism, with P__L6 = V(P, ...) rela
           <p>P0–P2 finished ahead of the strawman schedule. The weeks below keep the original plan from Monday 5 October 2026, and every phase still ends with something runnable.</p>
         </div>
         <div class="tbl-wrap">
-          <div class="gantt" role="img" aria-label="Timeline: P0 to P4 done or built; P5 weeks 8–9; P6 week 10; P7 weeks 11–12 and beyond; P8 later.">
+          <div class="gantt" role="img" aria-label="Timeline: P0 to P6 done or built; P7 weeks 11–12 and beyond; P8 later.">
             <span></span>
             <span class="wk">5 Oct</span><span class="wk">12</span><span class="wk">19</span><span class="wk">26</span><span class="wk">2 Nov</span><span class="wk">9</span><span class="wk">16</span><span class="wk">23</span><span class="wk">30</span><span class="wk">7 Dec</span><span class="wk">14</span><span class="wk">21</span>
             <span class="ph">P0 Decide</span><span class="bar p0" style="grid-column: 2 / span 1"></span>
@@ -516,8 +530,8 @@ print(compiled.source)   # the generated @mechanism, with P__L6 = V(P, ...) rela
             <span class="ph" style="grid-column:1">P2 Grid and editor</span><span class="bar p0" style="grid-column: 2 / span 1"></span>
             <span class="ph" style="grid-column:1">P3 Python and inputs</span><span class="bar p0" style="grid-column: 2 / span 1"></span>
             <span class="ph" style="grid-column:1">P4 Cell intervention</span><span class="bar p0" style="grid-column: 2 / span 1"></span>
-            <span class="ph" style="grid-column:1">P5 Token sweep</span><span class="bar" style="grid-column: 9 / span 2"></span>
-            <span class="ph" style="grid-column:1">P6 Paper demo</span><span class="bar" style="grid-column: 11 / span 1"></span>
+            <span class="ph" style="grid-column:1">P5 Token sweep</span><span class="bar p0" style="grid-column: 2 / span 1"></span>
+            <span class="ph" style="grid-column:1">P6 Paper demo</span><span class="bar p0" style="grid-column: 2 / span 1"></span>
             <span class="ph" style="grid-column:1">P7 Network side by side</span><span class="bar p7" style="grid-column: 12 / span 2"></span>
             <span class="ph" style="grid-column:1">P8 Multi-variable and multi-source</span><span class="bar p8" style="grid-column: 13 / span 1"></span>
           </div>
@@ -586,20 +600,41 @@ print(compiled.source)   # the generated @mechanism, with P__L6 = V(P, ...) rela
             <ul><li>The Figure 1 drag (last token, L5) shows jam, ale, pie and ale / pie side by side, including for a positional algorithm whose P is a custom function, and a reload restores it. Swapping “Ann” into “Tim” on the embedding row gives ale everywhere. 273 frontend tests pass, with no new type errors and lint, Prettier and knip clean for new code.</li></ul>
           </div>
         </details>
-        <details class="phase">
-          <summary><span class="ph-id">P5</span><span class="ph-title">Token sweep</span><span class="ph-when">Weeks 8–9</span><span class="ph-status">Next</span></summary>
+        <details class="phase" open>
+          <summary><span class="ph-id">P5</span><span class="ph-title">Token sweep</span><span class="ph-when">Weeks 8–9</span><span class="ph-status review">Play-testing</span></summary>
           <div class="ph-body">
-            <ul><li>Token drag, layers × 1 strips per algorithm, the full grid for inputs with the same tokens. Done when the default sweep shows the binding window and the §3.4 source shows ∅ for the reflexive algorithm.</li></ul>
+            <h5>Built</h5>
+            <ul><li>The <em>Sweep</em> mode (§7): token picking by drag or click, same position only; strips per algorithm with stable output colors and a summary of where each output changes; the full grid; the dashed Network column for P7. Sweeps reuse the source and target runs, so a full grid costs one evaluation per intervention.</li></ul>
+            <h5>Checked</h5>
+            <ul><li>The last-token sweep on the Figure 1 inputs shows the binding window (jam / ale / pie, the mixture ale / pie) and then pie; a drop on another position is refused; the full grid and its setting survive a reload. The engine's golden sweeps still match cell for cell.</li></ul>
+          </div>
+        </details>
+        <details class="phase" open>
+          <summary><span class="ph-id">P6</span><span class="ph-title">Paper demo</span><span class="ph-when">Week 10</span><span class="ph-status review">Play-testing</span></summary>
+          <div class="ph-body">
+            <h5>Built</h5>
+            <ul>
+              <li>A docked walkthrough of the paper's Figure 1 task, opened from <em>Walkthrough</em> beside the mode tabs. Its eight steps:
+                <ol>
+                  <li>Start a new algorithm on gemma-2-2b-it, so the user's own stay as they are.</li>
+                  <li>Load the positional algorithm.</li>
+                  <li>Save it.</li>
+                  <li>Intervene at the last token in the binding window (L16): jam / ale / pie.</li>
+                  <li>Swap the answer itself (L19): pie everywhere, the paper's confound.</li>
+                  <li>Use the cod source: reflexive outputs ∅.</li>
+                  <li>Sweep the last token: the window is L16–18, as in the paper's Figure 2.</li>
+                  <li>Your turn.</li>
+                </ol>
+              </li>
+              <li>Each step explains what to look at, has a button that does it, and stays checked once done; progress is saved with the chart.</li>
+              <li>Scope (decided 3 Oct): the Figure 1 task only. The Mixed example keeps illustrative weights, labelled as such, because the paper reports its fitted weights only as plots.</li>
+            </ul>
+            <h5>Checked</h5>
+            <ul><li>Run end to end in a headless browser on gemma-2-2b-it's tokens, with the results above at each step, and restored after a reload.</li></ul>
           </div>
         </details>
         <details class="phase">
-          <summary><span class="ph-id">P6</span><span class="ph-title">Paper demo</span><span class="ph-when">Week 10</span><span class="ph-status">Planned</span></summary>
-          <div class="ph-body">
-            <ul><li>The paper's tasks as presets, the mixed algorithm with fitted weights, and a guided walkthrough using the tutorial dock, on gemma-2-2b-it.</li></ul>
-          </div>
-        </details>
-        <details class="phase">
-          <summary><span class="ph-id">P7</span><span class="ph-title">Network side by side</span><span class="ph-when">Week 11 onward</span><span class="ph-status">Planned</span></summary>
+          <summary><span class="ph-id">P7</span><span class="ph-title">Network side by side</span><span class="ph-when">Week 11 onward</span><span class="ph-status">Next</span></summary>
           <div class="ph-body">
             <ul><li>Shared grid with Patch Lens, twin drag and the agreement map (§8).</li></ul>
           </div>
@@ -626,6 +661,8 @@ print(compiled.source)   # the generated @mechanism, with P__L6 = V(P, ...) rela
               <tr><td>Pyodide is slow</td><td>Measured</td><td>Loads once, on the first custom function (about 2 s in the browser here); later calls take milliseconds. Primitives stay in TypeScript for instant feedback.</td></tr>
               <tr><td>A custom function loops forever</td><td>Handled in P3</td><td>Each call is stopped after 3 s; the worker restarts and the variable shows the error.</td></tr>
               <tr><td>Pyodide comes from a CDN</td><td>Open</td><td>Fine for development; <code>NEXT_PUBLIC_PYODIDE_URL</code> can point at a self-hosted copy for deployment.</td></tr>
+              <tr><td>gemma-2-2b-it's tokenizer is gated</td><td>Handled</td><td>Model grids fall back to the ungated <code>unsloth/gemma-2-2b-it</code>, which serves the same tokenizer; an <code>HF_TOKEN</code> uses the official one.</td></tr>
+              <tr><td>A fresh <code>bun install</code> lacks the SQLite driver</td><td>Fixed</td><td>Bun skipped better-sqlite3's install script; it is now a trusted dependency. Checked with a fresh clone of the fork.</td></tr>
               <tr><td>Variables land on the wrong token</td><td>Open (Q1)</td><td>Drag to fix; a warning when the prompt and template differ in length; position-detecting primitives later.</td></tr>
               <tr><td>Too many arrows at 20 groups</td><td>Open</td><td>Density rules, focus, hiding unfocused tokens; arrows from the recall point are shorter than arrows from birth; families of variables later.</td></tr>
               <tr><td>Local dev on Ubuntu's Node 18</td><td>Found in P2</td><td>Its better-sqlite3 ABI has no prebuilt binary. Run the dev server on Node 20, or point workbench at Postgres.</td></tr>
@@ -638,7 +675,7 @@ print(compiled.source)   # the generated @mechanism, with P__L6 = V(P, ...) rela
       <!-- 12 ------------------------------------------------------------ -->
       <section class="doc" id="questions">
         <h2 class="sec"><span class="num">12</span>Decisions and open questions</h2>
-        <div class="prose"><p>Q1–Q15 and Q17 are decided. The others came up while building and play-testing P1–P4.</p></div>
+        <div class="prose"><p>All questions so far are decided.</p></div>
 
         <div class="q decided" id="q-anchor">
           <div class="q-head"><span class="q-id">Q1</span><span class="q-title">How do variables carry over to other prompts?</span></div>
@@ -701,41 +738,33 @@ print(compiled.source)   # the generated @mechanism, with P__L6 = V(P, ...) rela
           <p class="decision"><b>Decided for now:</b> Algorithm Hypothesis. Patch Lens is named for the logit lens in its cells, which this tool doesn't use. The name is still open to workshopping.</p>
         </div>
 
-        <div class="q" id="q-sweep">
-          <div class="q-head"><span class="q-id">Q16</span><span class="q-title">Token sweeps between different positions</span><span class="q-tag">needed for P5</span></div>
-          <p>A variable lives in one column, so under the same-name rule a source token dragged onto a different target token shares no variables, and every layer is refused. Options: allow it only on the embedding layer (swap the token itself); pair variables of the same family, such as pos2 with pos3, by a declared family; or allow only same-position sweeps.</p>
-          <p class="rec"><b>Recommendation:</b> same position by default, plus the embedding layer across positions. Revisit families together with Phase 8.</p>
-          <p class="decision">Decision: open</p>
+        <div class="q decided" id="q-sweep">
+          <div class="q-head"><span class="q-id">Q16</span><span class="q-title">Token sweeps between different positions</span></div>
+          <p>A variable lives in one column, so under the same-name rule a source token dragged onto a different target token shares no variables.</p>
+          <p class="decision"><b>Decided 3 Oct:</b> sweeps compare the same position only; a drop on a different position isn't allowed, and the tool says why. Pairing variables across positions can return with Phase 8.</p>
         </div>
         <div class="q decided" id="q-template">
           <div class="q-head"><span class="q-id">Q17</span><span class="q-title">Where do position IDs come from?</span></div>
           <p>Until 3 October, Position ID read group numbers from the template, so it depended only on position. Now it numbers the algorithm's special tokens, as they appear in the current input, in order of first appearance. A repeated name gets its first mention's ID.</p>
           <p class="decision"><b>Decided 3 Oct:</b> from the special tokens, stored as position ID : token (§4.6).</p>
         </div>
-        <div class="q" id="q-punct">
+        <div class="q decided" id="q-punct">
           <div class="q-head"><span class="q-id">Q18</span><span class="q-title">Abstract grids keep punctuation as tokens</span></div>
-          <p>The paper's figure drops commas and periods; the editor's abstract tokenizer keeps them, so abstract grids line up with model grids (gemma-2-2b-it adds only <span class="mono">&lt;bos&gt;</span>). The cost is four extra columns, which focus can hide.</p>
-          <p class="rec"><b>Recommendation:</b> keep punctuation.</p>
-          <p class="decision">Decision: open</p>
+          <p>The paper's figure drops commas and periods; the editor's abstract tokenizer keeps them, so abstract grids line up with model grids.</p>
+          <p class="decision"><b>Decided 3 Oct:</b> keep punctuation in the columns. A user can hide those columns with focus, or leave punctuation out of the prompt.</p>
         </div>
 
-        <div class="q" id="q-position">
+        <div class="q decided" id="q-position">
           <div class="q-head"><span class="q-id">Q19</span><span class="q-title">Is a position ID a kind of int?</span></div>
-          <p>Position IDs are numbers, but the type system keeps them apart from ints, so a count or a constant can't stand in for a position ID by accident, and Index takes only a position ID. The cost: a Python function that does arithmetic on positions must declare its result as a position ID, and an int from elsewhere needs a conversion.</p>
-          <p class="rec"><b>Recommendation:</b> keep them apart, and add a To position primitive if a real algorithm needs one. Lists as variable types (a variable holding several pairs) can wait too, since slots already take lists.</p>
-          <p class="decision">Decision: open</p>
+          <p class="decision"><b>Decided 3 Oct:</b> no. A position ID is its own type, like a pointer address: the tool does no arithmetic on position IDs, and an int can't stand in for one.</p>
         </div>
-        <div class="q" id="q-specials">
+        <div class="q decided" id="q-specials">
           <div class="q-head"><span class="q-id">Q20</span><span class="q-title">Special tokens by position, or by value?</span></div>
-          <p>Special tokens are designated by position in the template (0, 4, 8, 12, 18 for the names), so the same positions are special in every templated input, whatever names they hold. The alternative is a list of values (Ann, Joe, Pete, Tim), which would also find names at other positions but must list every name any input uses, and would make Position ID read the whole context rather than a few references.</p>
-          <p class="rec"><b>Recommendation:</b> keep positions, which fit templated prompts (Q1) and keep the references explicit. Revisit with the position-detecting primitives.</p>
-          <p class="decision">Decision: open</p>
+          <p class="decision"><b>Decided 3 Oct:</b> designated by position in the template, as built (§4.2).</p>
         </div>
-        <div class="q" id="q-mode">
+        <div class="q decided" id="q-mode">
           <div class="q-head"><span class="q-id">Q21</span><span class="q-title">Intervention view: a mode of the chart, or a chart of its own?</span></div>
-          <p>The cell intervention runs in the same chart as the editor, behind <em>Edit</em> / <em>Intervene</em>, so a researcher can change the algorithm and test it again without switching charts. A separate chart type would sit in the sidebar next to Patch Lens and could point at any saved algorithm.</p>
-          <p class="rec"><b>Recommendation:</b> keep the mode for now; the token sweep (P5) can be a third mode. Revisit when the network sits side by side (P7).</p>
-          <p class="decision">Decision: open</p>
+          <p class="decision"><b>Decided 3 Oct:</b> a mode. The chart switches between <em>Edit</em>, <em>Intervene</em> and <em>Sweep</em>; saving algorithms (§5) makes the comparison across algorithms explicit.</p>
         </div>
       </section>
 
