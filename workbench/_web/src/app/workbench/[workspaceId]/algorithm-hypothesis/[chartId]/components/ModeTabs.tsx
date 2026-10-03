@@ -4,6 +4,7 @@ import type { AlgorithmHypothesisMode } from "@/types/algorithmHypothesis";
 const MODES: { mode: AlgorithmHypothesisMode; label: string }[] = [
     { mode: "edit", label: "Edit" },
     { mode: "intervene", label: "Intervene" },
+    { mode: "sweep", label: "Sweep" },
 ];
 
 /** Switch between building the algorithm and intervening on it. */

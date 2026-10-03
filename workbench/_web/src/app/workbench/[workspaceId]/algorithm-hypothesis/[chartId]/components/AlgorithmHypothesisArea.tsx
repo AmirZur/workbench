@@ -58,6 +58,7 @@ import InterventionView, {
     defaultInterventionState,
     type InterventionState,
 } from "./InterventionView";
+import SweepView, { defaultSweepState, type SweepState } from "./SweepView";
 import { VariablePanel } from "./VariablePanel";
 import {
     addRef,
@@ -111,14 +112,16 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
     const [view, setView] = useState<AlgorithmView>(DEFAULT_VIEW);
     const [mode, setMode] = useState<AlgorithmHypothesisMode>("edit");
     const [intervention, setIntervention] = useState<InterventionState | null>(null);
+    const [sweep, setSweep] = useState<SweepState | null>(null);
     const hydratedChart = useRef<string | null>(null);
     useEffect(() => {
         if (!chart || hydratedChart.current === chart.id) return;
         const d = chart.data as AlgorithmHypothesisChartData | null;
         if (typeof d?.prompt === "string") setPrompt(d.prompt);
         setView({ ...DEFAULT_VIEW, ...(d?.view ?? {}) });
-        setMode(d?.mode === "intervene" ? "intervene" : "edit");
+        setMode(d?.mode === "intervene" || d?.mode === "sweep" ? d.mode : "edit");
         setIntervention(d?.intervention ?? null);
+        setSweep(d?.sweep ?? null);
         hydratedChart.current = chart.id;
     }, [chart]);
 
@@ -141,8 +144,9 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
             view,
             mode,
             ...(intervention ? { intervention } : {}),
+            ...(sweep ? { sweep } : {}),
         }),
-        [prompt, view, mode, intervention],
+        [prompt, view, mode, intervention, sweep],
     );
 
     useEffect(() => {
@@ -505,6 +509,7 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
         setMode(next);
         if (next === "intervene" && !intervention)
             setIntervention(defaultInterventionState(prompt));
+        if (next === "sweep" && !sweep) setSweep(defaultSweepState(prompt));
         capture("param_changed", { tool: "algorithm-hypothesis", param: "mode", value: next });
     };
 
@@ -616,6 +621,22 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
                 templateTokens={templateTokens}
                 state={intervention}
                 onStateChange={setIntervention}
+                onSaveInput={onSaveInput}
+                onModeChange={onModeChange}
+                mobile={mobile}
+            />
+        );
+
+    if (mode === "sweep" && sweep)
+        return (
+            <SweepView
+                workspaceId={workspaceId}
+                algorithmId={algorithmId}
+                definition={definition}
+                savedDefinition={savedDefinition}
+                templateTokens={templateTokens}
+                state={sweep}
+                onStateChange={setSweep}
                 onSaveInput={onSaveInput}
                 onModeChange={onModeChange}
                 mobile={mobile}

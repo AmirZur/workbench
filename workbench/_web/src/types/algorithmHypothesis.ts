@@ -115,7 +115,7 @@ export interface InterventionSpec {
     targetToken: number;
 }
 
-export type AlgorithmHypothesisMode = "edit" | "intervene";
+export type AlgorithmHypothesisMode = "edit" | "intervene" | "sweep";
 
 /** Persisted into the chart row's `data` when `type = "algorithm-hypothesis"`. */
 export interface AlgorithmHypothesisChartData {
@@ -128,5 +128,13 @@ export interface AlgorithmHypothesisChartData {
         source: string;
         target: string;
         spec: InterventionSpec | null;
+    };
+    /** The sweep view's inputs, the swept position (the same in both), and
+     * whether it sweeps every position at once. */
+    sweep?: {
+        source: string;
+        target: string;
+        token: number | null;
+        full: boolean;
     };
 }

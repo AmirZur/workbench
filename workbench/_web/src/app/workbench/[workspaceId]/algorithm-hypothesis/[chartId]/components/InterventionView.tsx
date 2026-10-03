@@ -1,22 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpDown, ChevronDown } from "lucide-react";
+import { ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { cn } from "@/lib/utils";
 import type {
     AlgorithmDefinition,
     AlgorithmHypothesisChartData,
+    AlgorithmHypothesisMode,
     AlgorithmView,
     Cell,
     InterventionSpec,
@@ -33,9 +25,9 @@ import {
 } from "@/lib/algorithmHypothesis/engine";
 import { isError, isPending, keyOf, show, type Value } from "@/lib/algorithmHypothesis/primitives";
 import { pythonResolver, usePythonRuntime } from "@/lib/algorithmHypothesis/python";
-import { EXAMPLE_PROMPTS, tokenizeAbstract } from "@/lib/algorithmHypothesis/grids";
-import { useModelTokens } from "@/lib/api/algorithmApi";
+import { EXAMPLE_PROMPTS } from "@/lib/algorithmHypothesis/grids";
 import { useComparedAlgorithms, type ComparedAlgorithm } from "./comparison";
+import { GridHeading, InputRow, useTokens, type Role } from "./inputs";
 import { AlgorithmGrid, rowOf, tokenLabel, type CellMark } from "./AlgorithmGrid";
 import { ColorSwatch } from "./glyphs";
 import { ModeTabs } from "./ModeTabs";
@@ -62,11 +54,9 @@ interface InterventionViewProps {
     state: InterventionState;
     onStateChange: (state: InterventionState) => void;
     onSaveInput: (text: string) => void;
-    onModeChange: (mode: "edit") => void;
+    onModeChange: (mode: AlgorithmHypothesisMode) => void;
     mobile?: boolean;
 }
-
-type Role = "source" | "target";
 
 const cellText = (cell: Cell, tokens: string[]) =>
     `${cell.layer < 0 ? "Emb" : `L${cell.layer}`} · “${tokenLabel(tokens[cell.token] ?? "?")}” (${cell.token})`;
@@ -85,16 +75,6 @@ function pairProblem(def: AlgorithmDefinition, from: Cell, to: Cell): string | n
     if (!t.some((k) => s.includes(k)))
         return "No variables in common. Interventions only swap variables with the same name.";
     return null;
-}
-
-function useTokens(
-    model: string | undefined,
-    text: string,
-): { tokens: string[]; loading: boolean } {
-    const q = useModelTokens(model, text);
-    const abstract = useMemo(() => tokenizeAbstract(text), [text]);
-    if (!model) return { tokens: abstract, loading: false };
-    return { tokens: q.data ?? [], loading: q.isLoading };
 }
 
 export default function InterventionView({
@@ -317,10 +297,7 @@ export default function InterventionView({
         <div className="flex h-full min-h-0 flex-col">
             <div className="p-3 border-b flex items-center justify-between gap-2">
                 <h2 className="text-sm pl-2 font-medium whitespace-nowrap">Algorithm Hypothesis</h2>
-                <ModeTabs
-                    mode="intervene"
-                    onModeChange={(m) => m === "edit" && onModeChange("edit")}
-                />
+                <ModeTabs mode="intervene" onModeChange={onModeChange} />
             </div>
             <div className="flex flex-col gap-2 border-b px-3 py-2">
                 <InputRow
@@ -529,144 +506,6 @@ export default function InterventionView({
                 {summary}
             </ResizablePanel>
         </ResizablePanelGroup>
-    );
-}
-
-// ------------------------------------------------------------------ inputs
-
-const ROLE_DOT: Record<"source" | "target" | "counterfactual", string> = {
-    source: "bg-cyan-500",
-    target: "bg-pink-500",
-    counterfactual: "bg-purple-600 dark:bg-purple-400",
-};
-
-function InputRow({
-    role,
-    value,
-    saved,
-    onChange,
-    onSave,
-    extra,
-}: {
-    role: Role;
-    value: string;
-    saved: string[];
-    onChange: (text: string) => void;
-    onSave: (text: string) => void;
-    extra?: React.ReactNode;
-}) {
-    // Like the editor's prompt: applied on Enter or blur, not per keystroke.
-    const [text, setText] = useState(value);
-    useEffect(() => setText(value), [value]);
-    const commit = () => {
-        if (text !== value) onChange(text);
-    };
-    const label = role === "source" ? "Source" : "Target";
-    return (
-        <div className="flex items-center gap-2">
-            <span className="flex w-16 shrink-0 items-center gap-1.5 text-sm font-medium">
-                <span className={cn("size-2 rounded-full", ROLE_DOT[role])} aria-hidden="true" />
-                {label}
-            </span>
-            <Input
-                aria-label={`${label} input`}
-                className="min-w-48 flex-1 font-mono"
-                value={text}
-                spellCheck={false}
-                onChange={(e) => setText(e.target.value)}
-                onBlur={commit}
-                onKeyDown={(e) => {
-                    if (e.key === "Enter") commit();
-                }}
-            />
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        aria-label={`Saved and example prompts for the ${role}`}
-                    >
-                        Inputs
-                        <ChevronDown />
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="max-w-[28rem]">
-                    {saved.length > 0 && (
-                        <>
-                            <DropdownMenuLabel>Saved with this algorithm</DropdownMenuLabel>
-                            {saved.map((s) => (
-                                <DropdownMenuItem
-                                    key={`saved-${s}`}
-                                    className="font-mono text-xs"
-                                    onSelect={() => onChange(s)}
-                                >
-                                    <span className="truncate">{s}</span>
-                                </DropdownMenuItem>
-                            ))}
-                            <DropdownMenuSeparator />
-                        </>
-                    )}
-                    <DropdownMenuLabel>Examples</DropdownMenuLabel>
-                    {EXAMPLE_PROMPTS.map((p) => (
-                        <DropdownMenuItem key={p.text} onSelect={() => onChange(p.text)}>
-                            {p.label}
-                        </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                        disabled={!value.trim() || saved.includes(value)}
-                        onSelect={() => onSave(value)}
-                    >
-                        Save this {role} with the algorithm
-                    </DropdownMenuItem>
-                </DropdownMenuContent>
-            </DropdownMenu>
-            {extra}
-        </div>
-    );
-}
-
-function GridHeading({
-    role,
-    label,
-    text,
-    output,
-}: {
-    role: "source" | "target" | "counterfactual";
-    label: string;
-    text: string;
-    output: Value | undefined;
-}) {
-    return (
-        // Sticky, so the heading stays in view when the grids scroll sideways.
-        <div className="sticky left-0 flex w-fit max-w-full min-w-0 items-center gap-2 px-3 pt-3 text-xs">
-            <span
-                className={cn("size-2 shrink-0 rounded-full", ROLE_DOT[role])}
-                aria-hidden="true"
-            />
-            <span className="text-sm font-medium">{label}</span>
-            <span
-                className={cn(
-                    "max-w-[36rem] truncate text-muted-foreground",
-                    role !== "counterfactual" && "font-mono",
-                )}
-            >
-                {text}
-            </span>
-            {output !== undefined && (
-                <span className="whitespace-nowrap text-muted-foreground">
-                    output{" "}
-                    <span
-                        className={cn(
-                            "font-mono text-foreground",
-                            role === "counterfactual" && "text-purple-700 dark:text-purple-300",
-                        )}
-                    >
-                        {show(output)}
-                    </span>
-                </span>
-            )}
-        </div>
     );
 }
 

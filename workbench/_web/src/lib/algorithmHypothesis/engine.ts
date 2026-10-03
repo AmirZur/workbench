@@ -576,7 +576,21 @@ export function interchangeIntervention(
     targetCell: Cell,
     options: EvaluateOptions = {},
 ): InterventionResult {
-    const target = evaluate(def, targetTokens, options);
+    return intervene(def, sourceTokens, targetTokens, sourceCell, targetCell, options);
+}
+
+/** interchangeIntervention, reusing source and target runs when given (sweeps
+ * run hundreds of interventions on the same pair of inputs). */
+function intervene(
+    def: AlgorithmDefinition,
+    sourceTokens: string[],
+    targetTokens: string[],
+    sourceCell: Cell,
+    targetCell: Cell,
+    options: EvaluateOptions,
+    runs: { source?: Evaluation; target?: Evaluation } = {},
+): InterventionResult {
+    const target = runs.target ?? evaluate(def, targetTokens, options);
     const sNodes = nodesAt(def, sourceCell.layer, sourceCell.token);
     const tNodes = nodesAt(def, targetCell.layer, targetCell.token);
     const base = {
@@ -599,7 +613,7 @@ export function interchangeIntervention(
             reason: "The two cells share no variables. Interventions only swap variables with the same name.",
         };
     }
-    const source = evaluate(def, sourceTokens, options);
+    const source = runs.source ?? evaluate(def, sourceTokens, options);
     const values: Record<string, Value> = {};
     for (const k of shared) values[k] = valueAt(def, source, k, sourceCell.layer).value;
     const counterfactual = evaluate(def, targetTokens, {
@@ -620,7 +634,7 @@ export function interchangeIntervention(
 
 export type SweepStatus = "ok" | "empty" | "unpaired";
 
-interface SweepRow {
+export interface SweepRow {
     layer: number;
     output: Value;
     status: SweepStatus;
@@ -634,16 +648,20 @@ export function tokenSweep(
     sourceToken: number,
     targetToken: number,
     options: EvaluateOptions = {},
+    runs: { source?: Evaluation; target?: Evaluation } = {},
 ): SweepRow[] {
+    const source = runs.source ?? evaluate(def, sourceTokens, options);
+    const target = runs.target ?? evaluate(def, targetTokens, options);
     const rows: SweepRow[] = [];
     for (let layer = EMB; layer < def.grid.layers; layer++) {
-        const r = interchangeIntervention(
+        const r = intervene(
             def,
             sourceTokens,
             targetTokens,
             { layer, token: sourceToken },
             { layer, token: targetToken },
             options,
+            { source, target },
         );
         rows.push({
             layer,
@@ -661,7 +679,13 @@ export function fullSweep(
     targetTokens: string[],
     options: EvaluateOptions = {},
 ): SweepRow[][] {
-    return targetTokens.map((_, t) => tokenSweep(def, sourceTokens, targetTokens, t, t, options));
+    const runs = {
+        source: evaluate(def, sourceTokens, options),
+        target: evaluate(def, targetTokens, options),
+    };
+    return targetTokens.map((_, t) =>
+        tokenSweep(def, sourceTokens, targetTokens, t, t, options, runs),
+    );
 }
 
 // ---------------------------------------------------------------- edits
