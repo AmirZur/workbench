@@ -25,6 +25,7 @@ import type {
     AlgorithmView,
     Cell,
     Ref,
+    Variable,
 } from "@/types/algorithmHypothesis";
 import {
     evaluate,
@@ -65,6 +66,7 @@ import {
     draftProblems,
     draftTypes,
     newDraft,
+    pasteDraft,
     refKeys,
     refTyper,
     refreshSpecials,
@@ -400,6 +402,55 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
         [definition, draft, commit, capture, changeDraft],
     );
 
+    // ----------------------------------------------------------- copy and paste
+
+    const [clipboard, setClipboard] = useState<Variable | null>(null);
+
+    const onCopyVariable = useCallback(() => {
+        if (!definition || !draft || draft.isNew) return;
+        const v = applyDraft(definition, draft).variables.find((x) => x.id === draft.id);
+        if (!v) return;
+        setClipboard(v);
+        toast.success(`Copied ${v.name}. Click a cell, then Paste here; or Alt-drag a variable.`);
+    }, [definition, draft]);
+
+    const onPaste = useCallback(() => {
+        if (!definition || !draft?.isNew || !clipboard) return;
+        setDraft(pasteDraft(definition, clipboard, draft.cell));
+    }, [definition, draft, clipboard]);
+
+    /** Alt-drag: a copy of the variable as a new draft where it was dropped. */
+    const onCopyTo = useCallback(
+        (id: string, cell: Cell) => {
+            if (!definition) return;
+            const v = definition.variables.find((x) => x.id === id);
+            if (!v) return;
+            setClipboard(v);
+            setDraft(pasteDraft(definition, v, cell));
+            capture("param_changed", { tool: "algorithm-hypothesis", param: "variable_copied" });
+        },
+        [definition, capture],
+    );
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+            const el = document.activeElement as HTMLElement | null;
+            if (el?.closest("input, textarea, select, [contenteditable='true']")) return;
+            if (window.getSelection()?.toString()) return;
+            const key = e.key.toLowerCase();
+            if (key === "c" && draft && !draft.isNew) {
+                e.preventDefault();
+                onCopyVariable();
+            } else if (key === "v" && draft?.isNew && clipboard) {
+                e.preventDefault();
+                onPaste();
+            }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [draft, clipboard, onCopyVariable, onPaste]);
+
     const onSave = useCallback(() => {
         if (!definition || !draft || draftIssues?.blocking.length) return;
         commit(applyDraft(definition, { ...draft, name: draft.name.trim() }));
@@ -630,6 +681,7 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
                         onVariableClick={onVariableClick}
                         moveProblem={gridMoveProblem}
                         onMove={onMove}
+                        onCopyTo={onCopyTo}
                     />
                 )}
             </div>
@@ -687,6 +739,9 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
                 preview={evaluation.values[draft.id] ?? null}
                 pythonStatus={python.status}
                 tagSuggestions={tagSuggestions}
+                clipboardName={clipboard?.name ?? null}
+                onCopy={onCopyVariable}
+                onPaste={onPaste}
                 problems={draftIssues}
                 onChange={changeDraft}
                 onSave={onSave}

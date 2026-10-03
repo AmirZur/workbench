@@ -75,6 +75,8 @@ interface AlgorithmGridProps {
     onVariableClick?: (id: string) => void;
     moveProblem?: (id: string, cell: Cell) => string | null;
     onMove?: (id: string, cell: Cell) => void;
+    /** Alt-drag (Option on a Mac) copies a variable to the cell instead of moving it. */
+    onCopyTo?: (id: string, cell: Cell) => void;
 }
 
 type Column = { token: number } | { gap: number[] };
@@ -169,6 +171,7 @@ export function AlgorithmGrid({
     onVariableClick = noop,
     moveProblem = () => null,
     onMove = noop,
+    onCopyTo = noop,
 }: AlgorithmGridProps) {
     const editing = mode === "edit";
     const gridRef = useRef<HTMLDivElement>(null);
@@ -217,6 +220,7 @@ export function AlgorithmGrid({
         y: number;
         target: Cell | null;
         problem: string | null;
+        copying: boolean;
     } | null>(null);
 
     useEffect(() => {
@@ -233,10 +237,12 @@ export function AlgorithmGrid({
             if (!s.active && Math.hypot(e.clientX - s.x, e.clientY - s.y) < 5) return;
             s.active = true;
             const over = cellAt(e.clientX, e.clientY);
-            const target = over ? resolveTarget(s.id, over) : null;
+            const copying = e.altKey;
+            const target = over ? (copying ? over : resolveTarget(s.id, over)) : null;
             const current = vars.get(s.id)?.cell ?? null;
-            const problem = target && !sameCell(target, current) ? moveProblem(s.id, target) : null;
-            setDrag({ id: s.id, x: e.clientX, y: e.clientY, target, problem });
+            const problem =
+                target && !copying && !sameCell(target, current) ? moveProblem(s.id, target) : null;
+            setDrag({ id: s.id, x: e.clientX, y: e.clientY, target, problem, copying });
         };
         const onPointerUp = (e: PointerEvent) => {
             const s = dragStart.current;
@@ -248,6 +254,7 @@ export function AlgorithmGrid({
             setDrag(null);
             const over = cellAt(e.clientX, e.clientY);
             if (!over) return;
+            if (e.altKey) return onCopyTo(s.id, over);
             const target = resolveTarget(s.id, over);
             if (sameCell(target, vars.get(s.id)?.cell ?? null)) return;
             const problem = moveProblem(s.id, target);
@@ -260,7 +267,7 @@ export function AlgorithmGrid({
             window.removeEventListener("pointermove", onPointerMove);
             window.removeEventListener("pointerup", onPointerUp);
         };
-    }, [moveProblem, onMove, resolveTarget, vars]);
+    }, [moveProblem, onMove, onCopyTo, resolveTarget, vars]);
 
     const startDrag = (e: React.PointerEvent, id: string) => {
         if (!editing || e.button !== 0 || e.pointerType === "touch") return;
@@ -679,6 +686,7 @@ export function AlgorithmGrid({
                     className="pointer-events-none fixed left-0 top-0 z-50 rounded-md border bg-popover px-2 py-1 text-xs shadow-md"
                     style={{ transform: `translate(${drag.x + 12}px, ${drag.y + 12}px)` }}
                 >
+                    {drag.copying && <span className="text-muted-foreground">Copy </span>}
                     <span className="font-mono">{dragVar.name}</span>
                     {drag.target && (
                         <span className="text-muted-foreground">

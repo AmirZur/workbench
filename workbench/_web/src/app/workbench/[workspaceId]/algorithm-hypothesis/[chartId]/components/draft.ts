@@ -55,6 +55,9 @@ export interface VariableDraft {
     activeSlot: string | null;
     /** Python source was edited by hand, so don't regenerate the stub. */
     codeTouched: boolean;
+    /** The name was typed by hand (or is an existing variable's), so it no
+     * longer follows the function. */
+    nameTouched: boolean;
     /** Why the last grid click couldn't be added. */
     pickError: string | null;
 }
@@ -94,6 +97,35 @@ export function refreshSpecials(def: AlgorithmDefinition, draft: VariableDraft):
         ...draft,
         args: draft.args.map((a) => (a.name === "specials" ? { ...a, refs } : a)),
     };
+}
+
+/** Default names follow the function: PosID1, Copy1, Retrieve1, Custom1, … */
+const NAME_PREFIX: Record<PrimitiveName | "python", string> = {
+    position_id: "PosID",
+    copy: "Copy",
+    pair: "Pair",
+    retrieve: "Retrieve",
+    index: "Index",
+    key_of: "KeyOf",
+    value_of: "ValueOf",
+    mixture: "Mixture",
+    constant: "Constant",
+    python: "Custom",
+};
+
+/** `base` followed by the smallest number (from `start`) no other variable uses. */
+function nextName(def: AlgorithmDefinition, base: string, exceptId: string, start = 1): string {
+    const taken = new Set(def.variables.filter((v) => v.id !== exceptId).map((v) => v.name));
+    let n = start;
+    while (taken.has(`${base}${n}`)) n++;
+    return `${base}${n}`;
+}
+
+/** The draft named after its function, unless its name was typed by hand. */
+export function withDefaultName(def: AlgorithmDefinition, draft: VariableDraft): VariableDraft {
+    if (draft.nameTouched) return draft;
+    const fn = draft.function.kind === "python" ? "python" : draft.function.name;
+    return { ...draft, name: nextName(def, NAME_PREFIX[fn], draft.id) };
 }
 
 const firstOpenSlot = (draft: Pick<VariableDraft, "function" | "args">): string | null => {
@@ -148,7 +180,7 @@ export function newDraft(def: AlgorithmDefinition, cell: Cell, nTokens: number):
     const draft: VariableDraft = {
         id: newVariableId(def, "v"),
         isNew: true,
-        name: isOutputCell && !def.output ? "answer" : "",
+        name: "",
         cell,
         function: fn,
         args: argsForPrimitive(fn.name, []),
@@ -158,9 +190,36 @@ export function newDraft(def: AlgorithmDefinition, cell: Cell, nTokens: number):
         isOutput: isOutputCell && !def.output,
         activeSlot: null,
         codeTouched: false,
+        nameTouched: false,
         pickError: null,
     };
     draft.activeSlot = firstOpenSlot(draft);
+    return withDefaultName(def, refreshSpecials(def, draft));
+}
+
+/** A copy of `v` as a new draft at `cell`, named like it with the next free
+ * number (parent → parent2, PosID1 → PosID2). It keeps the function (custom
+ * code included), arguments, type, color and tags; an argument that breaks a
+ * rule at the new cell shows as a problem until it's fixed. */
+export function pasteDraft(def: AlgorithmDefinition, v: Variable, cell: Cell): VariableDraft {
+    const base = v.name.replace(/\d+$/, "");
+    const name = base ? nextName(def, base, "", base === v.name ? 2 : 1) : nextName(def, "v", "");
+    const draft: VariableDraft = {
+        id: newVariableId(def, name),
+        isNew: true,
+        name,
+        cell,
+        function: structuredClone(v.function),
+        args: v.args.map((a) => ({ name: a.name, refs: a.refs.map((r) => ({ ...r })) })),
+        type: v.function.kind === "python" ? v.type : null,
+        color: v.color ?? null,
+        tags: [...(v.tags ?? [])],
+        isOutput: false,
+        activeSlot: null,
+        codeTouched: true,
+        nameTouched: true,
+        pickError: null,
+    };
     return refreshSpecials(def, draft);
 }
 
@@ -178,6 +237,7 @@ export function draftFromVariable(def: AlgorithmDefinition, v: Variable): Variab
         isOutput: def.output === v.id,
         activeSlot: null,
         codeTouched: true,
+        nameTouched: true,
         pickError: null,
     };
     if (draft.function.kind === "primitive")

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Plus, X } from "lucide-react";
+import { ClipboardPaste, Copy, Pencil, Plus, X } from "lucide-react";
 import { useTheme } from "next-themes";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { pythonLanguage } from "@codemirror/lang-python";
@@ -40,6 +40,7 @@ import {
     convertToPython,
     isAutoSlot,
     refreshSpecials,
+    withDefaultName,
     removePythonArg,
     removeRef,
     renameArg,
@@ -61,6 +62,10 @@ interface VariablePanelProps {
     pythonStatus: PythonStatus;
     /** Tags used elsewhere in the algorithm, offered as suggestions. */
     tagSuggestions: string[];
+    /** The copied variable's name, if any. */
+    clipboardName: string | null;
+    onCopy: () => void;
+    onPaste: () => void;
     problems: DraftProblems;
     onChange: (draft: VariableDraft) => void;
     onSave: () => void;
@@ -289,6 +294,9 @@ export function VariablePanel({
     preview,
     pythonStatus,
     tagSuggestions,
+    clipboardName,
+    onCopy,
+    onPaste,
     problems,
     onChange,
     onSave,
@@ -314,7 +322,8 @@ export function VariablePanel({
 
     const fnValue = draft.function.kind === "python" ? "python" : draft.function.name;
     const primitive = draft.function.kind === "primitive" ? PRIMITIVES[draft.function.name] : null;
-    const toPython = () => onChange(convertToPython(draft, typeInfo.type));
+    const toPython = () =>
+        onChange(withDefaultName(definition, convertToPython(draft, typeInfo.type)));
 
     const setOption = (name: string, value: string) => {
         if (draft.function.kind !== "primitive") return;
@@ -346,6 +355,18 @@ export function VariablePanel({
             </div>
 
             <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 text-sm">
+                {draft.isNew && clipboardName && (
+                    <div className="flex items-center justify-between gap-2 rounded-md border bg-card p-2">
+                        <span className="min-w-0 truncate text-xs text-muted-foreground">
+                            Copied:{" "}
+                            <span className="font-mono text-foreground">{clipboardName}</span>
+                        </span>
+                        <Button variant="outline" size="sm" onClick={onPaste}>
+                            <ClipboardPaste />
+                            Paste here
+                        </Button>
+                    </div>
+                )}
                 <div className="flex flex-col gap-1.5">
                     <Label htmlFor="ah-var-name">Name</Label>
                     <Input
@@ -355,7 +376,9 @@ export function VariablePanel({
                         value={draft.name}
                         placeholder="position"
                         spellCheck={false}
-                        onChange={(e) => onChange({ ...draft, name: e.target.value })}
+                        onChange={(e) =>
+                            onChange({ ...draft, name: e.target.value, nameTouched: true })
+                        }
                         onKeyDown={(e) => {
                             if (e.key === "Enter" && !problems.blocking.length) onSave();
                         }}
@@ -402,7 +425,8 @@ export function VariablePanel({
                     </div>
                     {!draft.isNew && (
                         <p className="text-xs text-muted-foreground">
-                            You can also drag the variable in the grid.
+                            You can also drag the variable in the grid, or Alt-drag (Option on a
+                            Mac) to copy it.
                         </p>
                     )}
                 </div>
@@ -413,12 +437,15 @@ export function VariablePanel({
                         value={fnValue}
                         onValueChange={(v) =>
                             onChange(
-                                refreshSpecials(
+                                withDefaultName(
                                     definition,
-                                    withFunction(
-                                        draft,
-                                        v as PrimitiveName | "python",
-                                        typeInfo.type,
+                                    refreshSpecials(
+                                        definition,
+                                        withFunction(
+                                            draft,
+                                            v as PrimitiveName | "python",
+                                            typeInfo.type,
+                                        ),
                                     ),
                                 ),
                             )
@@ -820,6 +847,16 @@ export function VariablePanel({
                             </Button>
                         </PopoverContent>
                     </Popover>
+                )}
+                {!draft.isNew && (
+                    <Button
+                        variant="ghost"
+                        onClick={onCopy}
+                        title="Copy this variable (Ctrl/⌘ C), then paste it into another cell"
+                    >
+                        <Copy />
+                        Copy
+                    </Button>
                 )}
                 <span className="flex-1" />
                 <Button variant="outline" onClick={onCancel}>
