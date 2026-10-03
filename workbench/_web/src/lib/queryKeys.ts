@@ -29,7 +29,7 @@ export const queryKeys = {
         one: (algorithmId: string) => ["algorithm", algorithmId] as const,
         byWorkspace: (workspaceId: string) => ["algorithms", workspaceId] as const,
         /** Under byWorkspace, so invalidating the list refreshes these too. */
-        definitions: (workspaceId: string) => ["algorithms", workspaceId, "definitions"] as const,
+        saved: (workspaceId: string) => ["algorithms", workspaceId, "saved"] as const,
         tokens: (model: string, text: string) => ["algorithmTokens", model, text] as const,
     },
     workshops: {

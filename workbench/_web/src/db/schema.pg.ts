@@ -176,7 +176,11 @@ export const algorithms = pgTable("algorithms", {
         .references(() => workspaces.id, { onDelete: "cascade" })
         .notNull(),
     name: varchar("name", { length: 256 }).notNull().default("Untitled algorithm"),
+    /** The working copy, autosaved on every edit. */
     definition: jsonb("definition").$type<AlgorithmDefinition>().notNull(),
+    /** The version the researcher last saved as complete; null for a draft. */
+    savedDefinition: jsonb("saved_definition").$type<AlgorithmDefinition>(),
+    savedAt: timestamp("saved_at", { mode: "date" }),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" })
         .defaultNow()

@@ -11,6 +11,8 @@ import {
     duplicateAlgorithm,
     getAlgorithmById,
     getAlgorithmsForWorkspace,
+    getSavedAlgorithmsForWorkspace,
+    saveAlgorithmVersion,
     updateAlgorithm,
 } from "@/lib/queries/algorithmQueries";
 import {
@@ -29,6 +31,26 @@ const WS = "ws-algorithms";
 describe("algorithms", () => {
     beforeEach(async () => {
         await clearDatabase();
+    });
+
+    it("saves a complete version that later edits don't change", async () => {
+        const draft = await createAlgorithm(WS, blankAlgorithm("Positional"));
+        await createAlgorithm(WS, blankAlgorithm("Still a draft"));
+        expect(await getSavedAlgorithmsForWorkspace(WS)).toEqual([]);
+
+        const v1: AlgorithmDefinition = { ...blankAlgorithm("Positional"), template: "Ann loves ale." };
+        const saved = await saveAlgorithmVersion(draft.id, v1);
+        expect(saved?.savedDefinition).toEqual(v1);
+        expect(saved?.savedAt).toBeInstanceOf(Date);
+
+        // Autosaving the working copy leaves the saved version alone.
+        await updateAlgorithm(draft.id, { ...v1, template: "Joe loves jam." });
+        const list = await getSavedAlgorithmsForWorkspace(WS);
+        expect(list.map((r) => r.id)).toEqual([draft.id]);
+        expect(list[0].definition.template).toBe("Ann loves ale.");
+        const items = await getAlgorithmsForWorkspace(WS);
+        expect(items.find((r) => r.id === draft.id)?.savedAt).toBeInstanceOf(Date);
+        expect(items.find((r) => r.id !== draft.id)?.savedAt).toBeNull();
     });
 
     it("creates, reads, updates and lists", async () => {

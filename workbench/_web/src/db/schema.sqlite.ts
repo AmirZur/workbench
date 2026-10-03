@@ -156,6 +156,8 @@ export const algorithms = sqliteTable("algorithms", {
     workspaceId: text("workspace_id").notNull(),
     name: text("name").notNull().default("Untitled algorithm"),
     definition: text("definition", { mode: "json" }).$type<AlgorithmDefinition>().notNull(),
+    savedDefinition: text("saved_definition", { mode: "json" }).$type<AlgorithmDefinition>(),
+    savedAt: integer("saved_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
         .$defaultFn(() => new Date())
         .notNull(),

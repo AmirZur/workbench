@@ -695,6 +695,24 @@ export function withSpecialTokens(
     };
 }
 
+/** JSON with object keys sorted, so equal definitions compare equal. */
+function canonical(x: unknown): unknown {
+    if (Array.isArray(x)) return x.map(canonical);
+    if (x && typeof x === "object")
+        return Object.fromEntries(
+            Object.keys(x as object)
+                .sort()
+                .filter((k) => (x as Record<string, unknown>)[k] !== undefined)
+                .map((k) => [k, canonical((x as Record<string, unknown>)[k])]),
+        );
+    return x;
+}
+
+/** Whether two definitions are the same algorithm, whatever their key order. */
+export function sameDefinition(a: AlgorithmDefinition, b: AlgorithmDefinition): boolean {
+    return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+}
+
 /** A fresh variable id that isn't taken. */
 export function newVariableId(def: AlgorithmDefinition, base: string): string {
     const clean = base.replace(/[^A-Za-z0-9_]/g, "_") || "v";

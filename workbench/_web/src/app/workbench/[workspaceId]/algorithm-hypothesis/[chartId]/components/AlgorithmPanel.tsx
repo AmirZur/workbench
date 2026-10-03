@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Download, FolderOpen, X } from "lucide-react";
+import { Copy, Download, FolderOpen, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -33,7 +34,14 @@ interface AlgorithmPanelProps {
     evaluation: Evaluation;
     types: Map<string, VarType | null>;
     problems: { variableId: string | null; message: string }[];
+    /** Autosave of the working copy. */
     saveState: SaveState;
+    /** Whether the algorithm has a saved version, and whether it matches. */
+    versionState: "draft" | "saved" | "changed";
+    canSave: boolean;
+    savingVersion: boolean;
+    onSaveVersion: () => void;
+    onRevert: () => void;
     algorithms: AlgorithmListItem[];
     prompt: string;
     onRename: (name: string) => void;
@@ -46,14 +54,14 @@ interface AlgorithmPanelProps {
     onEditVariable: (id: string) => void;
     onLoadExample: (kind: ExampleKind) => void;
     onUseCurrentPrompt: () => void;
-    onSwitchAlgorithm: (id: string | "new") => void;
+    onSwitchAlgorithm: (id: string | "new" | "duplicate") => void;
 }
 
-const SAVE_LABEL: Record<SaveState, string> = {
+const VERSION_LABEL = {
+    draft: "Not saved yet",
     saved: "Saved",
-    saving: "Saving…",
-    error: "Couldn't save. Your next edit will retry.",
-};
+    changed: "Unsaved changes",
+} as const;
 
 export function AlgorithmPanel({
     algorithmId,
@@ -63,6 +71,11 @@ export function AlgorithmPanel({
     types,
     problems,
     saveState,
+    versionState,
+    canSave,
+    savingVersion,
+    onSaveVersion,
+    onRevert,
     algorithms,
     prompt,
     onRename,
@@ -112,20 +125,57 @@ export function AlgorithmPanel({
 
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <div className="p-3 border-b flex items-center justify-between">
+            <div className="p-3 border-b flex items-center justify-between gap-2">
                 <h2 className="text-sm pl-2 font-medium">Algorithm</h2>
-                <span
-                    className={cn(
-                        "text-xs",
-                        saveState === "error" ? "text-destructive" : "text-muted-foreground",
+                <div className="flex items-center gap-2">
+                    <span
+                        className={cn(
+                            "text-xs",
+                            saveState === "error" ? "text-destructive" : "text-muted-foreground",
+                        )}
+                        aria-live="polite"
+                        title="Your edits are kept as a draft automatically. Save marks the algorithm as complete."
+                    >
+                        {saveState === "error"
+                            ? "Couldn't keep your draft. Your next edit will retry."
+                            : VERSION_LABEL[versionState]}
+                    </span>
+                    {versionState === "changed" && (
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                    Revert
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                                align="end"
+                                className="flex w-64 flex-col gap-3 text-sm"
+                            >
+                                <p>Discard your changes since the last save?</p>
+                                <Button variant="destructive" size="sm" onClick={onRevert}>
+                                    Revert to saved
+                                </Button>
+                            </PopoverContent>
+                        </Popover>
                     )}
-                    aria-live="polite"
-                >
-                    {SAVE_LABEL[saveState]}
-                </span>
+                    <Button size="sm" disabled={!canSave || savingVersion} onClick={onSaveVersion}>
+                        {savingVersion ? "Saving…" : "Save"}
+                    </Button>
+                </div>
             </div>
 
             <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 text-sm">
+                {versionState !== "saved" && problems.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                        Fix the problems below to save. Your edits are kept as a draft meanwhile.
+                    </p>
+                )}
+                {versionState === "draft" && !problems.length && (
+                    <p className="text-xs text-muted-foreground">
+                        Save the algorithm when it&apos;s complete. Saved algorithms appear next to
+                        each other when you intervene.
+                    </p>
+                )}
                 <div className="flex flex-col gap-1.5">
                     <Label htmlFor="ah-alg-name">Name</Label>
                     <div className="flex gap-2">
@@ -146,24 +196,44 @@ export function AlgorithmPanel({
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
-                                {algorithms
-                                    .filter((a) => a.id !== algorithmId)
-                                    .map((a) => (
-                                        <DropdownMenuItem
-                                            key={a.id}
-                                            onSelect={() => onSwitchAlgorithm(a.id)}
-                                        >
-                                            {a.name}
-                                        </DropdownMenuItem>
-                                    ))}
-                                {algorithms.some((a) => a.id !== algorithmId) && (
-                                    <DropdownMenuSeparator />
-                                )}
-                                <DropdownMenuItem onSelect={() => onSwitchAlgorithm("new")}>
-                                    New blank algorithm
+                                {(["saved", "draft"] as const).map((group) => {
+                                    const items = algorithms.filter(
+                                        (a) =>
+                                            a.id !== algorithmId &&
+                                            (group === "saved" ? !!a.savedAt : !a.savedAt),
+                                    );
+                                    if (!items.length) return null;
+                                    return (
+                                        <div key={group}>
+                                            <DropdownMenuLabel>
+                                                {group === "saved" ? "Saved" : "Drafts"}
+                                            </DropdownMenuLabel>
+                                            {items.map((a) => (
+                                                <DropdownMenuItem
+                                                    key={a.id}
+                                                    onSelect={() => onSwitchAlgorithm(a.id)}
+                                                >
+                                                    {a.name}
+                                                </DropdownMenuItem>
+                                            ))}
+                                            <DropdownMenuSeparator />
+                                        </div>
+                                    );
+                                })}
+                                <DropdownMenuItem onSelect={() => onSwitchAlgorithm("duplicate")}>
+                                    Duplicate this algorithm
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
+                        <Button
+                            variant="outline"
+                            aria-label="New algorithm"
+                            title="New algorithm"
+                            onClick={() => onSwitchAlgorithm("new")}
+                        >
+                            <Plus />
+                            New
+                        </Button>
                     </div>
                     {definition.description && (
                         <p className="text-xs text-muted-foreground">{definition.description}</p>

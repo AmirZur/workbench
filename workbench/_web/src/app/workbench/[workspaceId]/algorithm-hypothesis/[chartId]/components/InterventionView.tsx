@@ -28,20 +28,14 @@ import {
     interchangeIntervention,
     nodesAt,
     outputOf,
-    upgradeDefinition,
     valueAt,
     type EvaluateOptions,
 } from "@/lib/algorithmHypothesis/engine";
 import { isError, isPending, keyOf, show, type Value } from "@/lib/algorithmHypothesis/primitives";
 import { pythonResolver, usePythonRuntime } from "@/lib/algorithmHypothesis/python";
-import {
-    ALGORITHM_COLORS,
-    EXAMPLE_KINDS,
-    EXAMPLE_NAMES,
-    entityBindingExample,
-} from "@/lib/algorithmHypothesis/presets";
 import { EXAMPLE_PROMPTS, tokenizeAbstract } from "@/lib/algorithmHypothesis/grids";
-import { useModelTokens, useWorkspaceAlgorithmDefinitions } from "@/lib/api/algorithmApi";
+import { useModelTokens } from "@/lib/api/algorithmApi";
+import { useComparedAlgorithms, type ComparedAlgorithm } from "./comparison";
 import { AlgorithmGrid, rowOf, tokenLabel, type CellMark } from "./AlgorithmGrid";
 import { ColorSwatch } from "./glyphs";
 import { ModeTabs } from "./ModeTabs";
@@ -60,6 +54,8 @@ interface InterventionViewProps {
     workspaceId: string;
     algorithmId: string;
     definition: AlgorithmDefinition;
+    /** The algorithm's saved version, or null for a draft. */
+    savedDefinition: AlgorithmDefinition | null;
     types: Map<string, VarType | null>;
     view: AlgorithmView;
     templateTokens: string[];
@@ -105,6 +101,7 @@ export default function InterventionView({
     workspaceId,
     algorithmId,
     definition,
+    savedDefinition,
     types,
     view,
     templateTokens,
@@ -129,6 +126,14 @@ export default function InterventionView({
     );
     const spec = state.spec;
     const cells = spec ? specCells(spec) : null;
+    const compared = useComparedAlgorithms({
+        workspaceId,
+        algorithmId,
+        definition,
+        savedDefinition,
+        templateTokens,
+        enabled: !!spec,
+    });
     const sourceRun = useMemo(
         () => evaluate(definition, source.tokens, options),
         [definition, source.tokens, options],
@@ -483,12 +488,10 @@ export default function InterventionView({
 
     const summary = (
         <InterventionSummary
-            workspaceId={workspaceId}
-            algorithmId={algorithmId}
+            compared={compared}
             definition={definition}
             sourceTokens={source.tokens}
             targetTokens={target.tokens}
-            templateTokens={templateTokens}
             options={options}
             spec={spec}
             result={result}
@@ -670,96 +673,59 @@ function GridHeading({
 // ----------------------------------------------------------------- summary
 
 interface SummaryRow {
-    key: string;
-    name: string;
-    note?: string;
-    color?: string;
+    algorithm: ComparedAlgorithm;
     target: Value;
     counterfactual: Value | null;
     reason: string | null;
 }
 
+const GROUP_LABEL: Record<ComparedAlgorithm["group"], string | null> = {
+    this: null,
+    saved: "Saved algorithms",
+    paper: "Paper examples",
+};
+
 function InterventionSummary({
-    workspaceId,
-    algorithmId,
+    compared,
     definition,
     sourceTokens,
     targetTokens,
-    templateTokens,
     options,
     spec,
     result,
     pythonLoading,
     onClear,
 }: {
-    workspaceId: string;
-    algorithmId: string;
+    compared: ComparedAlgorithm[];
     definition: AlgorithmDefinition;
     sourceTokens: string[];
     targetTokens: string[];
-    templateTokens: string[];
     options: EvaluateOptions;
     spec: InterventionSpec | null;
     result: ReturnType<typeof interchangeIntervention> | null;
     pythonLoading: boolean;
     onClear: () => void;
 }) {
-    const { data: saved } = useWorkspaceAlgorithmDefinitions(workspaceId, !!spec);
-
     const rows = useMemo<SummaryRow[]>(() => {
         if (!spec) return [];
         const { source, target } = specCells(spec);
-        const run = (def: AlgorithmDefinition, template: string[]) => {
-            const r = interchangeIntervention(def, sourceTokens, targetTokens, source, target, {
-                ...options,
-                templateTokens: template,
-            });
+        return compared.map((algorithm) => {
+            const r = interchangeIntervention(
+                algorithm.definition,
+                sourceTokens,
+                targetTokens,
+                source,
+                target,
+                { ...options, templateTokens: algorithm.templateTokens },
+            );
             return {
-                target: outputOf(def, r.target),
+                algorithm,
+                target: outputOf(algorithm.definition, r.target),
                 counterfactual: r.ok ? r.output : null,
                 reason: r.reason,
             };
-        };
-        const sameGrid = (d: AlgorithmDefinition) =>
-            d.grid.kind === definition.grid.kind &&
-            d.grid.layers === definition.grid.layers &&
-            d.grid.model === definition.grid.model;
-        const out: SummaryRow[] = [
-            {
-                key: "this",
-                name: definition.name,
-                note: "this algorithm",
-                ...run(definition, templateTokens),
-            },
-        ];
-        for (const row of saved ?? []) {
-            if (row.id === algorithmId) continue;
-            const d = upgradeDefinition(row.definition);
-            if (!sameGrid(d) || !d.output) continue;
-            // Abstract templates tokenize here; a model grid's other templates
-            // would need the tokenizer, so they read position IDs from this one.
-            const template =
-                d.grid.kind === "abstract" ? tokenizeAbstract(d.template) : templateTokens;
-            out.push({ key: row.id, name: d.name, ...run(d, template) });
-        }
-        for (const kind of EXAMPLE_KINDS) {
-            const d = entityBindingExample(
-                kind,
-                templateTokens,
-                definition.grid,
-                definition.template,
-            );
-            if (typeof d === "string") break;
-            out.push({
-                key: `paper-${kind}`,
-                name: EXAMPLE_NAMES[kind],
-                note: "paper",
-                color: kind === "mixed" ? undefined : ALGORITHM_COLORS[kind],
-                ...run(d, templateTokens),
-            });
-        }
-        return out;
-    }, [spec, saved, algorithmId, definition, sourceTokens, targetTokens, templateTokens, options]);
+        });
+    }, [spec, compared, sourceTokens, targetTokens, options]);
 
     const vars = byId(definition);
     const cells = spec ? specCells(spec) : null;
@@ -855,57 +821,79 @@ function InterventionSummary({
                             </span>
                             <table className="w-full text-xs">
                                 <tbody>
-                                    {rows.map((r) => (
-                                        <tr key={r.key} className="border-t first:border-t-0">
-                                            <td className="py-1.5 pr-2 align-top">
-                                                <span className="flex items-center gap-1.5">
-                                                    {r.color && (
-                                                        <ColorSwatch
-                                                            color={r.color}
-                                                            className="size-2.5"
-                                                        />
-                                                    )}
-                                                    <span className="truncate">{r.name}</span>
-                                                    {r.note && (
-                                                        <span className="text-muted-foreground">
-                                                            {r.note}
-                                                        </span>
-                                                    )}
-                                                </span>
-                                            </td>
-                                            <td className="py-1.5 text-right font-mono align-top whitespace-nowrap">
-                                                {r.counterfactual === null ? (
-                                                    <span
-                                                        className="font-sans text-muted-foreground"
-                                                        title={r.reason ?? undefined}
-                                                    >
-                                                        no swap
+                                    {rows.flatMap((r, i) => {
+                                        const a = r.algorithm;
+                                        const label =
+                                            i === 0 || rows[i - 1].algorithm.group !== a.group
+                                                ? GROUP_LABEL[a.group]
+                                                : null;
+                                        const row = (
+                                            <tr key={a.key} className="border-t first:border-t-0">
+                                                <td className="py-1.5 pr-2 align-top">
+                                                    <span className="flex items-center gap-1.5">
+                                                        {a.color && (
+                                                            <ColorSwatch
+                                                                color={a.color}
+                                                                className="size-2.5"
+                                                            />
+                                                        )}
+                                                        <span className="truncate">{a.name}</span>
+                                                        {a.note && (
+                                                            <span className="text-muted-foreground">
+                                                                {a.note}
+                                                            </span>
+                                                        )}
                                                     </span>
-                                                ) : (
-                                                    <>
-                                                        {show(r.target)} →{" "}
+                                                </td>
+                                                <td className="py-1.5 text-right font-mono align-top whitespace-nowrap">
+                                                    {r.counterfactual === null ? (
                                                         <span
-                                                            className={cn(
-                                                                isError(r.counterfactual)
-                                                                    ? "text-destructive"
-                                                                    : keyOf(r.counterfactual) !==
-                                                                          keyOf(r.target) &&
-                                                                          "text-purple-700 dark:text-purple-300",
-                                                            )}
+                                                            className="font-sans text-muted-foreground"
+                                                            title={r.reason ?? undefined}
                                                         >
-                                                            {show(r.counterfactual)}
+                                                            no swap
                                                         </span>
-                                                    </>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
+                                                    ) : (
+                                                        <>
+                                                            {show(r.target)} →{" "}
+                                                            <span
+                                                                className={cn(
+                                                                    isError(r.counterfactual)
+                                                                        ? "text-destructive"
+                                                                        : keyOf(
+                                                                              r.counterfactual,
+                                                                          ) !== keyOf(r.target) &&
+                                                                              "text-purple-700 dark:text-purple-300",
+                                                                )}
+                                                            >
+                                                                {show(r.counterfactual)}
+                                                            </span>
+                                                        </>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                        return label
+                                            ? [
+                                                  <tr key={`${a.group}-label`}>
+                                                      <th
+                                                          colSpan={2}
+                                                          className="pt-3 pb-1 text-left font-medium text-muted-foreground"
+                                                      >
+                                                          {label}
+                                                      </th>
+                                                  </tr>,
+                                                  row,
+                                              ]
+                                            : [row];
+                                    })}
                                 </tbody>
                             </table>
                             <p className="text-xs text-muted-foreground">
-                                Algorithms in this workspace on the same grid, then the paper&apos;s
-                                examples placed on this template. “No swap”: the two cells share no
-                                variable in that algorithm.
+                                Saved algorithms use their saved version; save an algorithm in Edit
+                                to add it here. The paper&apos;s examples are placed on this
+                                template. “No swap”: the two cells share no variable in that
+                                algorithm.
                             </p>
                         </div>
                     </>

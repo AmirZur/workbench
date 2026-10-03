@@ -56,6 +56,9 @@ cp ../../.env .env && bunx drizzle-kit push   # creates the SQLite tables in wor
 bun run dev                                    # http://localhost:3000
 ```
 
+After pulling new commits, run `bunx drizzle-kit push` again in `workbench/_web` in case the
+database schema changed (it only adds tables and columns).
+
 Open the workspace, then choose **Algorithm Hypothesis** in the left sidebar. The header shows
 the model backend as unavailable; Algorithm Hypothesis doesn't use it.
 

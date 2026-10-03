@@ -3,11 +3,13 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
     createAlgorithm,
     getAlgorithmById,
-    getAlgorithmDefinitionsForWorkspace,
     getAlgorithmsForWorkspace,
+    getSavedAlgorithmsForWorkspace,
+    saveAlgorithmVersion,
     updateAlgorithm,
 } from "@/lib/queries/algorithmQueries";
 import { encodeText } from "@/actions/tok";
@@ -40,13 +42,30 @@ export const useWorkspaceAlgorithms = (workspaceId: string | undefined) =>
         enabled: !!workspaceId,
     });
 
-/** Every algorithm in the workspace with its definition (intervention view). */
-export const useWorkspaceAlgorithmDefinitions = (workspaceId: string | undefined, enabled = true) =>
+/** Saved versions of the workspace's saved algorithms (intervention and sweep views). */
+export const useSavedAlgorithms = (workspaceId: string | undefined, enabled = true) =>
     useQuery({
-        queryKey: queryKeys.algorithms.definitions(workspaceId ?? ""),
-        queryFn: () => getAlgorithmDefinitionsForWorkspace(workspaceId as string),
+        queryKey: queryKeys.algorithms.saved(workspaceId ?? ""),
+        queryFn: () => getSavedAlgorithmsForWorkspace(workspaceId as string),
         enabled: !!workspaceId && enabled,
     });
+
+/** Save the working copy as the algorithm's saved version. */
+export const useSaveAlgorithmVersion = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, definition }: { id: string; definition: AlgorithmDefinition }) =>
+            saveAlgorithmVersion(id, definition),
+        onSuccess: (row) => {
+            if (!row) return;
+            queryClient.setQueryData(queryKeys.algorithms.one(row.id), row);
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.algorithms.byWorkspace(row.workspaceId),
+            });
+        },
+        onError: () => toast.error("Couldn't save the algorithm. Try again."),
+    });
+};
 
 /** Autosave target: errors are shown inline by the editor, so no toast here. */
 export const useSaveAlgorithm = () => {

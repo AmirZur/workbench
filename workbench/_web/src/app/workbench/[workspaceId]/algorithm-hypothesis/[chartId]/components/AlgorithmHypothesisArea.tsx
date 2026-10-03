@@ -11,6 +11,7 @@ import { updateAlgorithm } from "@/lib/queries/algorithmQueries";
 import {
     useAlgorithm,
     useCreateAlgorithm,
+    useSaveAlgorithmVersion,
     useModelTokens,
     useSaveAlgorithm,
     useWorkspaceAlgorithms,
@@ -32,6 +33,7 @@ import {
     outputOf,
     problems as algorithmProblems,
     removeVariable,
+    sameDefinition,
     upgradeDefinition,
     withInferredTypes,
     withSpecialTokens,
@@ -152,11 +154,16 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
     // -------------------------------- the algorithm (working copy, autosaved)
 
     const [definition, setDefinition] = useState<AlgorithmDefinition | null>(null);
+    // The version saved as complete; other algorithms compare against saved versions.
+    const [savedDefinition, setSavedDefinition] = useState<AlgorithmDefinition | null>(null);
     const [draft, setDraft] = useState<VariableDraft | null>(null);
     const hydratedAlgorithm = useRef<string | null>(null);
     useEffect(() => {
         if (!algorithmRow || hydratedAlgorithm.current === algorithmRow.id) return;
         setDefinition(upgradeDefinition(algorithmRow.definition));
+        setSavedDefinition(
+            algorithmRow.savedDefinition ? upgradeDefinition(algorithmRow.savedDefinition) : null,
+        );
         setDraft(null);
         hydratedAlgorithm.current = algorithmRow.id;
     }, [algorithmRow]);
@@ -462,23 +469,57 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
         capture("param_changed", { tool: "algorithm-hypothesis", param: "example", value: kind });
     };
 
-    const switchAlgorithm = async (id: string | "new") => {
+    const switchAlgorithm = async (id: string | "new" | "duplicate") => {
         if (!algorithmId || id === algorithmId) return;
         flush();
         try {
-            const nextId =
-                id === "new"
-                    ? (
-                          await createAlgorithm({
-                              workspaceId,
-                              definition: blankAlgorithm(undefined, prompt),
-                          })
-                      ).id
-                    : id;
+            let nextId = id;
+            if (id === "new" || id === "duplicate") {
+                const start =
+                    id === "new" || !definition
+                        ? {
+                              ...blankAlgorithm(undefined, prompt),
+                              grid: definition?.grid ?? blankAlgorithm().grid,
+                          }
+                        : { ...definition, name: `Copy of ${definition.name}` };
+                nextId = (await createAlgorithm({ workspaceId, definition: start })).id;
+            }
+            setDraft(null);
             await writeChartData(chartState(nextId));
         } catch {
             toast.error("Couldn't open that algorithm.");
         }
+    };
+
+    // ------------------------------------------------- saving a complete version
+
+    const { mutateAsync: saveVersion, isPending: savingVersion } = useSaveAlgorithmVersion();
+    const versionState: "draft" | "saved" | "changed" = !savedDefinition
+        ? "draft"
+        : definition && sameDefinition(savedDefinition, definition)
+          ? "saved"
+          : "changed";
+
+    const onSaveVersion = async () => {
+        const id = hydratedAlgorithm.current;
+        if (!definition || !id || problems.length) return;
+        // The save writes the working copy too, so a pending autosave is moot.
+        clearTimeout(saveTimer.current);
+        pending.current = null;
+        const row = await saveVersion({ id, definition });
+        if (!row) return;
+        setSavedDefinition(definition);
+        setSaveState("saved");
+        toast.success(
+            `Saved “${definition.name}”. Intervene compares it with your other algorithms.`,
+        );
+        capture("param_changed", { tool: "algorithm-hypothesis", param: "algorithm_saved" });
+    };
+
+    const onRevert = () => {
+        if (!savedDefinition) return;
+        commit(savedDefinition);
+        setDraft(null);
     };
 
     // ---------------------------------------------------------------- render
@@ -518,6 +559,7 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
                 workspaceId={workspaceId}
                 algorithmId={algorithmId}
                 definition={definition}
+                savedDefinition={savedDefinition}
                 types={savedTypes}
                 view={view}
                 templateTokens={templateTokens}
@@ -660,6 +702,11 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
                 types={shownTypes}
                 problems={problems}
                 saveState={saveState}
+                versionState={versionState}
+                canSave={!problems.length && versionState !== "saved"}
+                savingVersion={savingVersion}
+                onSaveVersion={() => void onSaveVersion()}
+                onRevert={onRevert}
                 algorithms={algorithmList ?? []}
                 prompt={prompt}
                 onRename={(name) => commit({ ...definition, name })}
