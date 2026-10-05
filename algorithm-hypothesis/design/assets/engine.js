@@ -633,12 +633,14 @@
   const qPtr = () => mk("q_ptr", 3, QUERY, "retrieve", [T(QUERY), ...ks("bind").map(R)], { match: "key" });
   const answer = (key, match) => mk("answer", 7, LAST, "retrieve", [R(key), ...ks("bind").map(R)], { match });
 
-  // The mixed example colors and tags each variable by the algorithm it serves;
-  // the bindings serve lexical and reflexive retrieval, so they stay black.
+  // Each example colors and tags a variable by the one algorithm it serves.
+  // Positional binds position IDs; the others bind names, which serve lexical
+  // and reflexive retrieval, so those bindings stay black, like the answer.
   const ALGORITHM_COLORS = { positional: "indigo", lexical: "emerald", reflexive: "amber" };
-  function servedBy(v) {
+  function servedBy(v, kind) {
     const id = v.id;
     const tags = id.startsWith("pos") || id.startsWith("id") || id === "q_pos" || id === "P" ? ["positional"]
+      : id.startsWith("bind") && kind === "positional" ? ["positional"]
       : id === "q_key" || id === "L" ? ["lexical"]
       : id === "q_ptr" || id === "R" ? ["reflexive"]
       : id.startsWith("bind") ? ["lexical", "reflexive"] : [];
@@ -697,9 +699,10 @@
         mk("L", 5, LAST, "copy", [R("q_key")]),
         mk("R", 5, LAST, "copy", [R("q_ptr")]),
         mk("answer", 7, LAST, "mixture", [R("P"), R("L"), R("R"), ...ks("bind").map(R)], { w_pos: 3, sigma: 0.7, w_lex: 2.6, w_ref: 2.6 }),
-      ].map(servedBy),
+      ],
     },
   };
+  for (const [kind, a] of Object.entries(ALGORITHMS)) a.vars = a.vars.map((v) => servedBy(v, kind));
 
   const clone = (o) => JSON.parse(JSON.stringify(o));
 

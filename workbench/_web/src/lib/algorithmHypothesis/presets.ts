@@ -50,8 +50,9 @@ const DESCRIPTIONS: Record<ExampleKind, string> = {
     mixed: "All three signals at once, combined by the paper's Eq. 2 into a distribution over the entities.",
 };
 
-/** The mixed example colors and tags each variable by the algorithm it serves. */
-export const ALGORITHM_COLORS = {
+/** Each example colors a variable by the one algorithm it serves; variables
+ * shared by several algorithms stay black. */
+const ALGORITHM_COLORS = {
     positional: "indigo",
     lexical: "emerald",
     reflexive: "amber",
@@ -59,11 +60,13 @@ export const ALGORITHM_COLORS = {
 
 type Mechanism = keyof typeof ALGORITHM_COLORS;
 
-/** Which of the three algorithms a variable of the mixed example serves. The
- * bindings serve both lexical and reflexive retrieval. */
-function serves(id: string): Mechanism[] {
+/** Which of the three algorithms a variable of an example serves. The
+ * positional example binds position IDs; the others bind names, which serve
+ * both lexical and reflexive retrieval. */
+function serves(id: string, kind: ExampleKind): Mechanism[] {
     if (id.startsWith("pos") || id.startsWith("id") || id === "q_pos" || id === "P")
         return ["positional"];
+    if (id.startsWith("bind") && kind === "positional") return ["positional"];
     if (id === "q_key" || id === "L") return ["lexical"];
     if (id === "q_ptr" || id === "R") return ["reflexive"];
     if (id.startsWith("bind")) return ["lexical", "reflexive"];
@@ -258,12 +261,11 @@ export function entityBindingExample(
             );
     }
 
-    if (kind === "mixed")
-        for (const v of vs) {
-            const tags = serves(v.id);
-            if (tags.length) v.tags = tags;
-            if (tags.length === 1) v.color = ALGORITHM_COLORS[tags[0]];
-        }
+    for (const v of vs) {
+        const tags = serves(v.id, kind);
+        if (tags.length) v.tags = tags;
+        if (tags.length === 1) v.color = ALGORITHM_COLORS[tags[0]];
+    }
 
     let output = "answer";
     if (a < grid.layers - 1) {

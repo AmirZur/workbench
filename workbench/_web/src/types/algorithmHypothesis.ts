@@ -117,6 +117,15 @@ export interface InterventionSpec {
 
 export type AlgorithmHypothesisMode = "edit" | "intervene" | "sweep";
 
+/** The paper walkthrough: open, on which step, the steps done, and the
+ * algorithms it loaded (example kind → algorithm id). */
+export interface WalkthroughState {
+    open: boolean;
+    step: number;
+    done?: string[];
+    algorithms?: Record<string, string>;
+}
+
 /** Persisted into the chart row's `data` when `type = "algorithm-hypothesis"`. */
 export interface AlgorithmHypothesisChartData {
     algorithmId: string;
@@ -137,6 +146,5 @@ export interface AlgorithmHypothesisChartData {
         token: number | null;
         full: boolean;
     };
-    /** The paper walkthrough: open, and on which step. */
-    walkthrough?: { open: boolean; step: number; done?: string[] };
+    walkthrough?: WalkthroughState;
 }

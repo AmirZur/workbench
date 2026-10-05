@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Copy, Download, FolderOpen, Plus, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Copy, Download, FileUp, FolderOpen, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +20,6 @@ import type { AlgorithmDefinition, VarType } from "@/types/algorithmHypothesis";
 import type { AlgorithmListItem } from "@/lib/queries/algorithmQueries";
 import { PRIMITIVES, show } from "@/lib/algorithmHypothesis/primitives";
 import type { Evaluation } from "@/lib/algorithmHypothesis/engine";
-import { EXAMPLE_KINDS, EXAMPLE_NAMES, type ExampleKind } from "@/lib/algorithmHypothesis/presets";
 import { describeType } from "@/lib/algorithmHypothesis/vartypes";
 import { chipColor, TypeGlyph } from "./glyphs";
 import { layerLabel, tokenLabel } from "./AlgorithmGrid";
@@ -51,11 +50,11 @@ interface AlgorithmPanelProps {
     /** Token clicks in the grid mark special tokens. */
     markingSpecials: boolean;
     onToggleMarking: () => void;
-    onWalkthrough: () => void;
     onEditVariable: (id: string) => void;
-    onLoadExample: (kind: ExampleKind) => void;
     onUseCurrentPrompt: () => void;
     onSwitchAlgorithm: (id: string | "new" | "duplicate") => void;
+    /** Opens an algorithm from a JSON file, as Download writes it. */
+    onOpenFile: (file: File) => void;
 }
 
 const VERSION_LABEL = {
@@ -85,15 +84,13 @@ export function AlgorithmPanel({
     onRemoveInput,
     markingSpecials,
     onToggleMarking,
-    onWalkthrough,
     onEditVariable,
-    onLoadExample,
     onUseCurrentPrompt,
     onSwitchAlgorithm,
+    onOpenFile,
 }: AlgorithmPanelProps) {
     const [name, setName] = useState(definition.name);
-    // The example whose "replace" confirmation is open.
-    const [confirming, setConfirming] = useState<ExampleKind | null>(null);
+    const fileInput = useRef<HTMLInputElement>(null);
     useEffect(() => setName(definition.name), [definition.name]);
     const commitName = () => {
         const trimmed = name.trim();
@@ -225,8 +222,24 @@ export function AlgorithmPanel({
                                 <DropdownMenuItem onSelect={() => onSwitchAlgorithm("duplicate")}>
                                     Duplicate this algorithm
                                 </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => fileInput.current?.click()}>
+                                    <FileUp />
+                                    From file…
+                                </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
+                        <input
+                            ref={fileInput}
+                            type="file"
+                            accept=".json,application/json"
+                            className="hidden"
+                            aria-label="Open an algorithm from a JSON file"
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = "";
+                                if (file) onOpenFile(file);
+                            }}
+                        />
                         <Button
                             variant="outline"
                             aria-label="New algorithm"
@@ -451,66 +464,6 @@ export function AlgorithmPanel({
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                    <Label>Examples from the paper</Label>
-                    <p className="text-xs text-muted-foreground">
-                        Gur-Arieh, Geva &amp; Geiger (2025). Placed on the current prompt and grid.
-                        The Mixed example&apos;s weights are illustrative, not the paper&apos;s
-                        fitted ones.{" "}
-                        <Button
-                            variant="link"
-                            size="sm"
-                            className="h-auto p-0 text-xs"
-                            onClick={onWalkthrough}
-                        >
-                            Take the walkthrough
-                        </Button>
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                        {EXAMPLE_KINDS.map((kind) =>
-                            definition.variables.length ? (
-                                <Popover
-                                    key={kind}
-                                    open={confirming === kind}
-                                    onOpenChange={(open) => setConfirming(open ? kind : null)}
-                                >
-                                    <PopoverTrigger asChild>
-                                        <Button variant="outline" size="sm">
-                                            {EXAMPLE_NAMES[kind]}
-                                        </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="flex w-64 flex-col gap-3 text-sm">
-                                        <p>
-                                            Replace the {definition.variables.length} variables in
-                                            this algorithm with the{" "}
-                                            {EXAMPLE_NAMES[kind].toLowerCase()} example?
-                                        </p>
-                                        <Button
-                                            variant="destructive"
-                                            size="sm"
-                                            onClick={() => {
-                                                setConfirming(null);
-                                                onLoadExample(kind);
-                                            }}
-                                        >
-                                            Replace
-                                        </Button>
-                                    </PopoverContent>
-                                </Popover>
-                            ) : (
-                                <Button
-                                    key={kind}
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => onLoadExample(kind)}
-                                >
-                                    {EXAMPLE_NAMES[kind]}
-                                </Button>
-                            ),
-                        )}
-                    </div>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
                     <Label>Export</Label>
                     <div className="flex gap-2">
                         <Button variant="outline" size="sm" onClick={copyJson}>
@@ -523,7 +476,8 @@ export function AlgorithmPanel({
                         </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                        Load it in Python as a causalab model with the algorithm_hypothesis package:
+                        Anyone can open the downloaded file here with Open, From file. Or load it in
+                        Python as a causalab model with the algorithm_hypothesis package:
                     </p>
                     <pre className="overflow-x-auto rounded-md border bg-card p-2 font-mono text-xs">
                         {`from algorithm_hypothesis import compile_algorithm\ncompiled = compile_algorithm("${fileName}")\ncompiled.model  # causalab CausalModel`}

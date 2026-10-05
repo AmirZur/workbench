@@ -4,31 +4,22 @@ import { useMemo } from "react";
 import type { AlgorithmDefinition } from "@/types/algorithmHypothesis";
 import { sameDefinition, upgradeDefinition } from "@/lib/algorithmHypothesis/engine";
 import { tokenizeAbstract } from "@/lib/algorithmHypothesis/grids";
-import {
-    ALGORITHM_COLORS,
-    EXAMPLE_KINDS,
-    EXAMPLE_NAMES,
-    entityBindingExample,
-} from "@/lib/algorithmHypothesis/presets";
 import { useSavedAlgorithms } from "@/lib/api/algorithmApi";
 
 /** One algorithm the intervention and sweep views run alongside this one. */
 export interface ComparedAlgorithm {
     key: string;
     name: string;
-    group: "this" | "saved" | "paper";
+    group: "this" | "saved";
     note?: string;
-    /** A swatch for the paper's three mechanisms. */
-    color?: string;
     definition: AlgorithmDefinition;
     /** Template tokens; a custom function's `template` parameter reads them. */
     templateTokens: string[];
 }
 
 /**
- * This algorithm (its working copy), the saved version of every other saved
- * algorithm in the workspace on the same grid, and the paper's examples placed
- * on this algorithm's template.
+ * This algorithm (its working copy) and the saved version of every other saved
+ * algorithm in the workspace on the same grid.
  */
 export function useComparedAlgorithms({
     workspaceId,
@@ -80,24 +71,6 @@ export function useComparedAlgorithms({
                 group: "saved",
                 definition: d,
                 templateTokens: template,
-            });
-        }
-        for (const kind of EXAMPLE_KINDS) {
-            const d = entityBindingExample(
-                kind,
-                templateTokens,
-                definition.grid,
-                definition.template,
-            );
-            if (typeof d === "string") break;
-            out.push({
-                key: `paper-${kind}`,
-                name: EXAMPLE_NAMES[kind],
-                group: "paper",
-                note: kind === "mixed" ? "illustrative weights" : undefined,
-                color: kind === "mixed" ? undefined : ALGORITHM_COLORS[kind],
-                definition: d,
-                templateTokens,
             });
         }
         return out;

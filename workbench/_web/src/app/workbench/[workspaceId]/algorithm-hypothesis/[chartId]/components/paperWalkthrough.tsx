@@ -1,168 +1,336 @@
-import type { AlgorithmDefinition, AlgorithmHypothesisMode } from "@/types/algorithmHypothesis";
-import { EXAMPLE_PROMPTS } from "@/lib/algorithmHypothesis/grids";
-import type { ExampleKind } from "@/lib/algorithmHypothesis/presets";
+import type {
+    AlgorithmDefinition,
+    AlgorithmGrid,
+    AlgorithmHypothesisMode,
+} from "@/types/algorithmHypothesis";
+import { EXAMPLE_PROMPTS, tokenizeAbstract } from "@/lib/algorithmHypothesis/grids";
+import { EXAMPLE_NAMES, type ExampleKind } from "@/lib/algorithmHypothesis/presets";
+import { ColorSwatch } from "./glyphs";
 import type { InterventionState } from "./InterventionView";
 import type { SweepState } from "./SweepView";
 import type { WalkthroughStep } from "./Walkthrough";
 
 /**
- * The paper demo (P6): a walkthrough of Gur-Arieh, Geva & Geiger (2025) on
- * gemma-2-2b-it with the Figure 1 inputs. Each step can be done by hand or
- * with its button; a step is checked once its state is in place.
+ * The paper demo (P6): a walkthrough of Gur-Arieh, Geva & Geiger (2025) on an
+ * abstract grid with the Figure 1 inputs. It loads the positional, lexical,
+ * reflexive and mixed algorithms one by one, each as its own algorithm, then
+ * intervenes on them. Each step can be done by hand or with its button; a step
+ * is checked once its state is in place.
  */
 
-export const WALKTHROUGH_MODEL = "google/gemma-2-2b-it";
-const TARGET = EXAMPLE_PROMPTS[0].text; // … What does Tim love?
+export const WALKTHROUGH_GRID: AlgorithmGrid = { kind: "abstract", layers: 8 };
+export const WALKTHROUGH_TARGET = EXAMPLE_PROMPTS[0].text; // … What does Tim love?
 const SOURCE = EXAMPLE_PROMPTS[1].text; // … What does Ann love?
-const SOURCE_COD = EXAMPLE_PROMPTS[2].text; // Ann loves cod, which the target never mentions
+const LAST = tokenizeAbstract(WALKTHROUGH_TARGET).length - 1;
+
+/** Where a step leaves the tool, on one of the walkthrough's algorithms. */
+export interface WalkthroughGoal {
+    /** A variable to open in the variable panel (Edit). */
+    variable?: string;
+    mode?: AlgorithmHypothesisMode;
+    intervention?: InterventionState;
+    sweep?: SweepState;
+}
 
 interface PaperWalkthroughContext {
+    /** The walkthrough algorithm open now, if any. */
+    current: ExampleKind | null;
     definition: AlgorithmDefinition;
-    prompt: string;
-    tokens: string[];
-    tokensLoading: boolean;
+    /** The variable open in the variable panel. */
+    openVariable: string | null;
     mode: AlgorithmHypothesisMode;
     versionState: "draft" | "saved" | "changed";
     problemCount: number;
     intervention: InterventionState | null;
     sweep: SweepState | null;
-    start: () => void;
-    loadExample: (kind: ExampleKind) => void;
+    /** Opens (creating it the first time) one of the walkthrough's algorithms. */
+    go: (kind: ExampleKind, goal?: WalkthroughGoal) => void;
     save: () => void;
-    intervene: (state: InterventionState) => void;
-    sweepWith: (state: SweepState) => void;
+    close: () => void;
 }
 
 const Mono = ({ children }: { children: React.ReactNode }) => (
     <span className="font-mono text-xs">{children}</span>
 );
 
+const COLOR: Record<Exclude<ExampleKind, "mixed">, string> = {
+    positional: "indigo",
+    lexical: "emerald",
+    reflexive: "amber",
+};
+
+/** "indigo", with a swatch. */
+const Color = ({ kind }: { kind: Exclude<ExampleKind, "mixed"> }) => (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+        <ColorSwatch color={COLOR[kind]} className="size-2.5" />
+        {COLOR[kind]}
+    </span>
+);
+
 export function paperWalkthroughSteps(c: PaperWalkthroughContext): WalkthroughStep[] {
-    const onGemma =
-        c.definition.grid.kind === "model" && c.definition.grid.model === WALKTHROUGH_MODEL;
-    const ready = onGemma && c.prompt === TARGET && !c.tokensLoading && c.tokens.length > 0;
-    const hasPositional =
-        c.definition.variables.some((v) => v.id === "q_pos") &&
-        c.definition.variables.some((v) => v.id === "id1");
-    const last = c.tokens.length - 1;
-    const layerOf = (id: string, fallback: number) =>
-        c.definition.variables.find((v) => v.id === id)?.cell.layer ?? fallback;
-    // gemma-2-2b-it's binding window in the paper is L16–18; the example puts P at L16.
-    const windowLayer = layerOf("P", 16);
-    // Where the answer is computed (on 26 layers an `output` copy sits above it).
-    const answerLayer = layerOf("answer", 19);
-    const spec = c.intervention?.spec;
+    const on = (kind: ExampleKind) => c.current === kind;
+    const layerOf = (kind: ExampleKind, id: string, fallback: number) =>
+        (on(kind) ? c.definition.variables.find((v) => v.id === id)?.cell.layer : null) ?? fallback;
+    const pLayer = layerOf("positional", "P", 5);
+    const answerLayer = layerOf("positional", "answer", 7);
+    const qLayer = layerOf("reflexive", "q_ptr", 3);
     const at = (layer: number) => ({
         sourceLayer: layer,
-        sourceToken: last,
+        sourceToken: LAST,
         targetLayer: layer,
-        targetToken: last,
+        targetToken: LAST,
     });
-    const intervenedAt = (layer: number, source: string) =>
-        c.mode === "intervene" &&
-        c.intervention?.source === source &&
-        c.intervention.target === TARGET &&
-        spec?.targetLayer === layer &&
-        spec.sourceLayer === layer &&
-        spec.targetToken === last &&
-        spec.sourceToken === last;
-    const needs = (ok: boolean, msg: string) => (ok ? undefined : msg);
+    const intervention = (layer: number | null): InterventionState => ({
+        source: SOURCE,
+        target: WALKTHROUGH_TARGET,
+        spec: layer === null ? null : at(layer),
+    });
+    const intervenedAt = (layer: number) => {
+        const s = c.intervention?.spec;
+        return (
+            on("positional") &&
+            c.mode === "intervene" &&
+            c.intervention?.source === SOURCE &&
+            c.intervention.target === WALKTHROUGH_TARGET &&
+            s?.sourceLayer === layer &&
+            s.targetLayer === layer &&
+            s.sourceToken === LAST &&
+            s.targetToken === LAST
+        );
+    };
+    const sweeping = (full: boolean) =>
+        on("positional") &&
+        c.mode === "sweep" &&
+        c.sweep?.source === SOURCE &&
+        c.sweep.target === WALKTHROUGH_TARGET &&
+        c.sweep.full === full &&
+        (full || c.sweep.token === LAST);
+    const sweep = (full: boolean): SweepState => ({
+        source: SOURCE,
+        target: WALKTHROUGH_TARGET,
+        token: LAST,
+        full,
+    });
+
+    /** Loads the algorithm, then saves it: the saved ones are compared later. */
+    const load = (kind: Exclude<ExampleKind, "mixed">) => ({
+        action: !on(kind)
+            ? { label: `Load the ${kind} algorithm`, run: () => c.go(kind) }
+            : {
+                  label: `Save ${EXAMPLE_NAMES[kind]}`,
+                  run: c.save,
+                  disabled:
+                      c.versionState === "saved"
+                          ? "Saved."
+                          : c.problemCount
+                            ? "Fix the problems in the Algorithm panel first."
+                            : undefined,
+              },
+        done: on(kind) && c.versionState === "saved",
+    });
+    /** Opens a variable of a walkthrough algorithm in the variable panel. */
+    const open = (kind: ExampleKind, id: string) => ({
+        action: { label: `Open ${id}`, run: () => c.go(kind, { variable: id }) },
+        done: on(kind) && c.openVariable === id,
+    });
 
     return [
         {
-            id: "start",
-            title: "The task, on gemma-2-2b-it",
+            id: "load-positional",
+            title: "Load the positional algorithm",
             body: (
                 <>
                     <p>
                         Gur-Arieh, Geva &amp; Geiger (2025) ask how a model answers{" "}
-                        <em>What does Tim love?</em> after reading “Ann loves ale, Joe loves jam,
-                        Pete loves pie, Tim loves tea”. They describe three algorithms:
+                        <em>What does Tim love?</em> after “Ann loves ale, Joe loves jam, Pete loves
+                        pie, Tim loves tea”. This walkthrough builds their three algorithms on an
+                        abstract 8-layer grid, then intervenes on them.
                     </p>
-                    <ul className="list-disc pl-5">
-                        <li>
-                            <b>Positional</b>: retrieve the entity at the recalled name&apos;s
-                            position.
-                        </li>
-                        <li>
-                            <b>Lexical</b>: retrieve the entity bound to the name itself.
-                        </li>
-                        <li>
-                            <b>Reflexive</b>: follow a pointer to the entity token.
-                        </li>
-                    </ul>
                     <p>
-                        This walkthrough builds them on gemma-2-2b-it&apos;s 26 layers and tokens
-                        and finds an intervention where they disagree. It starts a new algorithm, so
-                        yours stay as they are. Nothing runs the model: only its tokenizer.
+                        Each opens as its own algorithm, so yours stay as they are. <b>Save</b> each
+                        one once it loads: Intervene and Sweep compare saved algorithms.
+                    </p>
+                    <p>
+                        Variables only the positional algorithm uses are <Color kind="positional" />
+                        ; the ones the algorithms share stay black.
                     </p>
                 </>
             ),
-            action: { label: "Start on gemma-2-2b-it", run: c.start },
-            done: onGemma && c.prompt === TARGET,
+            ...load("positional"),
         },
         {
-            id: "positional",
-            title: "The positional algorithm",
+            id: "open-pos1",
+            title: "Position ID",
             body: (
                 <>
+                    <p>
+                        Click <Mono>pos1</Mono>, the lowest variable on the left, above Ann.
+                    </p>
                     <p>
                         The names are the algorithm&apos;s <b>special tokens</b> (underlined).
-                        Position ID numbers them in order of first appearance and stores a position
-                        ID : name pair: <Mono>pos1 = 1:Ann</Mono>. Each ID is copied onto the bound
-                        entity (<Mono>id1</Mono>) and bound to it (<Mono>bind1 = 1:ale</Mono>).
-                    </p>
-                    <p>
-                        When the question recalls Tim, Position ID gives the second Tim its first
-                        mention&apos;s ID, <Mono>q_pos = 4:Tim</Mono>. The last token carries the ID
-                        (<Mono>P = 4</Mono>) and retrieves the entity bound to it: tea.
-                    </p>
-                    <p>Click q_pos in the grid to see Position ID&apos;s code.</p>
-                </>
-            ),
-            action: {
-                label: "Load the positional algorithm",
-                run: () => c.loadExample("positional"),
-                disabled: needs(ready, "Do step 1 first; gemma-2-2b-it's tokens load then."),
-            },
-            done: onGemma && hasPositional,
-        },
-        {
-            id: "save",
-            title: "Save it",
-            body: (
-                <>
-                    <p>
-                        Edits are kept as a draft automatically. <b>Save</b> marks an algorithm as
-                        complete, and saved algorithms appear next to each other when you intervene
-                        or sweep.
-                    </p>
-                    <p>
-                        The paper&apos;s lexical and reflexive algorithms and their mixture appear
-                        there too, as examples, so the next steps can compare all of them.
+                        Position ID&apos;s default numbers them in order of first appearance and
+                        stores position ID : token, so <Mono>pos1 = 1:Ann</Mono>. A name mentioned
+                        again gets its first mention&apos;s ID: the question&apos;s Tim is{" "}
+                        <Mono>q_pos = 4:Tim</Mono>, like the first Tim. The panel shows the code;
+                        make it a custom function to try another numbering.
                     </p>
                 </>
             ),
-            action: {
-                label: "Save",
-                run: c.save,
-                disabled: needs(
-                    hasPositional && !c.problemCount,
-                    "Load the positional algorithm first.",
-                ),
-            },
-            done: hasPositional && c.versionState === "saved",
+            ...open("positional", "pos1"),
         },
         {
-            id: "intervene",
-            title: `Intervene at the last token, L${windowLayer}`,
+            id: "open-positional-answer",
+            title: "Retrieve",
             body: (
                 <>
                     <p>
-                        The <b>source</b> asks about Ann (“Joe loves ale, Ann loves pie, …”); the{" "}
-                        <b>target</b> asks about Tim. Swapping the last token&apos;s cell at L
-                        {windowLayer} from the source into the target gives each algorithm a
-                        different <b>counterfactual</b> output:
+                        Click <Mono>answer</Mono>, tea, in the last column.
+                    </p>
+                    <p>
+                        Retrieve works like attention: it matches a key against key : value pairs
+                        and reads the value of the first match. The key is <Mono>P = 4</Mono>, the
+                        question&apos;s position ID carried to the last token. The pairs bind each
+                        entity to its name&apos;s position ID, <Mono>bind4 = 4:tea</Mono>, so the
+                        answer is tea.
+                    </p>
+                </>
+            ),
+            ...open("positional", "answer"),
+        },
+        {
+            id: "load-lexical",
+            title: "Load the lexical algorithm",
+            body: (
+                <>
+                    <p>
+                        The lexical algorithm binds each entity to the name itself, and the
+                        question&apos;s Tim retrieves it. Its own variables are{" "}
+                        <Color kind="lexical" />.
+                    </p>
+                    <p>Save it once it loads.</p>
+                </>
+            ),
+            ...load("lexical"),
+        },
+        {
+            id: "open-bind1",
+            title: "Lexical binding",
+            body: (
+                <>
+                    <p>
+                        Click <Mono>bind1</Mono>, Ann : ale, above ale.
+                    </p>
+                    <p>
+                        Pair binds ale to the token Ann, not to Ann&apos;s position ID. The bindings
+                        are black because the reflexive algorithm uses the same ones.
+                    </p>
+                </>
+            ),
+            ...open("lexical", "bind1"),
+        },
+        {
+            id: "open-lexical-answer",
+            title: "The same Retrieve",
+            body: (
+                <>
+                    <p>
+                        Click <Mono>answer</Mono> in the last column again.
+                    </p>
+                    <p>
+                        It&apos;s the same Retrieve as in the positional algorithm, over different
+                        bindings: the key is <Mono>L = Tim</Mono>, copied from the question, and it
+                        matches <Mono>bind4 = Tim:tea</Mono>.
+                    </p>
+                </>
+            ),
+            ...open("lexical", "answer"),
+        },
+        {
+            id: "load-reflexive",
+            title: "Load the reflexive algorithm",
+            body: (
+                <>
+                    <p>
+                        The reflexive algorithm uses the lexical bindings but fetches the answer
+                        entity earlier and carries a pointer to it. Its own variables are{" "}
+                        <Color kind="reflexive" />.
+                    </p>
+                    <p>Save it once it loads.</p>
+                </>
+            ),
+            ...load("reflexive"),
+        },
+        {
+            id: "open-q_ptr",
+            title: "The answer, fetched early",
+            body: (
+                <>
+                    <p>
+                        Click <Mono>q_ptr</Mono>, above the repeated Tim in the question.
+                    </p>
+                    <p>
+                        It retrieves tea already at L{qLayer}, at the question&apos;s Tim.{" "}
+                        <Mono>R</Mono> copies it to the last token, and <Mono>answer</Mono>{" "}
+                        dereferences it: Retrieve with match = value finds the binding whose value
+                        is tea, so it only works if tea is in context.
+                    </p>
+                </>
+            ),
+            ...open("reflexive", "q_ptr"),
+        },
+        {
+            id: "load-mixed",
+            title: "Load the mixed algorithm",
+            body: (
+                <>
+                    <p>
+                        Mixed has all three. The last token now stores three variables,{" "}
+                        <Mono>P</Mono>, <Mono>L</Mono> and <Mono>R</Mono>, one for each algorithm,
+                        and their colors together are this one&apos;s. <Mono>answer</Mono> combines
+                        them with the paper&apos;s Eq. 2 (illustrative weights, not the paper&apos;s
+                        fitted ones), and all three predict tea.
+                    </p>
+                    <p>
+                        Don&apos;t save this one, so the next steps compare the three on their own.
+                    </p>
+                </>
+            ),
+            action: { label: "Load the mixed algorithm", run: () => c.go("mixed") },
+            done: on("mixed"),
+        },
+        {
+            id: "back-to-positional",
+            title: "Back to positional, in Intervene",
+            body: (
+                <>
+                    <p>
+                        Intervene runs an interchange intervention: drag a cell of the <b>source</b>{" "}
+                        grid onto the <b>target</b> grid, and the source&apos;s variables in that
+                        cell replace the target&apos;s.
+                    </p>
+                    <p>
+                        The source asks about Ann (“Joe loves ale, Ann loves pie, …”); the target
+                        asks about Tim. The summary runs the intervention on every saved algorithm,
+                        so lexical and reflexive appear next to positional.
+                    </p>
+                </>
+            ),
+            action: {
+                label: "Open positional in Intervene",
+                run: () =>
+                    c.go("positional", { mode: "intervene", intervention: intervention(null) }),
+            },
+            done: on("positional") && c.mode === "intervene",
+        },
+        {
+            id: "intervene-P",
+            title: "Intervene on the position ID",
+            body: (
+                <>
+                    <p>
+                        Drag the last token&apos;s cell at L{pLayer}, where <Mono>P</Mono> sits,
+                        from the source onto the target. Each algorithm keeps a different variable
+                        there, so each predicts a different <b>counterfactual</b> output:
                     </p>
                     <ul className="list-disc pl-5">
                         <li>
@@ -173,115 +341,102 @@ export function paperWalkthroughSteps(c: PaperWalkthroughContext): WalkthroughSt
                             Lexical: L = Ann retrieves Ann&apos;s entity in the target, <b>ale</b>.
                         </li>
                         <li>
-                            Reflexive: R points to pie, which the target has, so <b>pie</b>.
+                            Reflexive: R = pie, which the target has, so <b>pie</b>.
                         </li>
                     </ul>
-                    <p>
-                        The Mixed example combines the three (the paper&apos;s Eq. 2) with
-                        illustrative weights, not the paper&apos;s fitted ones.
-                    </p>
                 </>
             ),
             action: {
-                label: `Intervene at L${windowLayer}`,
-                run: () => c.intervene({ source: SOURCE, target: TARGET, spec: at(windowLayer) }),
-                disabled: needs(hasPositional && last >= 0, "Load the positional algorithm first."),
+                label: `Intervene at L${pLayer}`,
+                run: () =>
+                    c.go("positional", {
+                        mode: "intervene",
+                        intervention: intervention(pLayer),
+                    }),
             },
-            done: hasPositional && intervenedAt(windowLayer, SOURCE),
+            done: intervenedAt(pLayer),
         },
         {
-            id: "answer",
-            title: `Swap the answer itself, L${answerLayer}`,
+            id: "intervene-answer",
+            title: "Intervene on the answer",
             body: (
                 <p>
-                    At L{answerLayer} the last token already holds the answer, so the intervention
-                    swaps in the source&apos;s answer, <b>pie</b>, and every algorithm agrees. The
-                    paper points out this confound: the reflexive prediction is also the
-                    source&apos;s answer, so the binding window has to come before it.
+                    Now the last token at L{answerLayer}, where <Mono>answer</Mono> holds tea. Every
+                    algorithm takes the source&apos;s answer, <b>pie</b>, so here they agree. The
+                    reflexive prediction at L{pLayer} was pie too: the paper tells a pointer from
+                    the answer with a source whose answer the target never mentions.
                 </p>
             ),
             action: {
                 label: `Intervene at L${answerLayer}`,
-                run: () => c.intervene({ source: SOURCE, target: TARGET, spec: at(answerLayer) }),
-                disabled: needs(hasPositional && last >= 0, "Load the positional algorithm first."),
-            },
-            done: hasPositional && intervenedAt(answerLayer, SOURCE),
-        },
-        {
-            id: "cod",
-            title: "Pointer or answer? A source with cod",
-            body: (
-                <p>
-                    To tell the reflexive pointer from the answer, the paper uses a source where Ann
-                    loves <b>cod</b>, which the target never mentions. At L{windowLayer} the
-                    reflexive algorithm finds nothing to dereference and outputs <b>∅</b>; the
-                    positional and lexical predictions don&apos;t change. Move the intervention to L
-                    {answerLayer} and every algorithm outputs cod.
-                </p>
-            ),
-            action: {
-                label: "Use the cod source",
                 run: () =>
-                    c.intervene({ source: SOURCE_COD, target: TARGET, spec: at(windowLayer) }),
-                disabled: needs(hasPositional && last >= 0, "Load the positional algorithm first."),
+                    c.go("positional", {
+                        mode: "intervene",
+                        intervention: intervention(answerLayer),
+                    }),
             },
-            done: hasPositional && c.mode === "intervene" && c.intervention?.source === SOURCE_COD,
+            done: intervenedAt(answerLayer),
         },
         {
-            id: "sweep",
+            id: "sweep-last",
             title: "Sweep the last token",
             body: (
                 <p>
-                    A sweep runs the intervention at every layer, from the embedding row up. The
-                    algorithms disagree in the <b>binding window</b>, L{windowLayer}–L
-                    {answerLayer - 1}, where P, L and R sit at the last token; that matches the
-                    paper&apos;s Figure 2, where gemma-2-2b-it&apos;s window is L16–18. From L
-                    {answerLayer} on, the answer itself is swapped.
+                    A sweep runs the intervention at every layer of one token. On the last token the
+                    algorithms disagree at L{pLayer}–L{answerLayer - 1}, where P, L and R sit, and
+                    agree from L{answerLayer}, where the answer itself is swapped. Below L{pLayer}{" "}
+                    the last token holds no variable yet, so nothing changes.
                 </p>
             ),
             action: {
                 label: "Sweep the last token",
-                run: () =>
-                    c.sweepWith({ source: SOURCE, target: TARGET, token: last, full: false }),
-                disabled: needs(hasPositional && last >= 0, "Load the positional algorithm first."),
+                run: () => c.go("positional", { mode: "sweep", sweep: sweep(false) }),
             },
-            done:
-                hasPositional &&
-                c.mode === "sweep" &&
-                c.sweep?.token === last &&
-                c.sweep.source === SOURCE &&
-                c.sweep.target === TARGET,
+            done: sweeping(false),
         },
         {
-            id: "yours",
+            id: "sweep-full",
+            title: "Every position",
+            body: (
+                <p>
+                    <b>Full grid</b> sweeps every token at every layer: one map per algorithm.
+                    Besides the last token, they disagree at the question&apos;s Tim, where{" "}
+                    <Mono>q_pos</Mono>, <Mono>q_key</Mono> and <Mono>q_ptr</Mono> sit. Only the
+                    positional algorithm changes at Ann and Joe, which the source swaps:{" "}
+                    <Mono>q_pos</Mono> reads the names before Tim to number him.
+                </p>
+            ),
+            action: {
+                label: "Sweep the full grid",
+                run: () => c.go("positional", { mode: "sweep", sweep: sweep(true) }),
+            },
+            done: sweeping(true),
+        },
+        {
+            id: "finish",
             title: "Your turn",
             body: (
                 <>
-                    <p>Some hypotheses to try:</p>
+                    <p>
+                        You built the paper&apos;s three algorithms and found interventions that
+                        tell them apart. Some things to try:
+                    </p>
                     <ul className="list-disc pl-5">
                         <li>
-                            Load the Mixed example (Edit, Algorithm panel) and open{" "}
-                            <Mono>answer</Mono> to change w_pos, σ, w_lex and w_ref; save it under a
-                            new name and compare.
+                            Open Mixed (Open, Drafts) and change <Mono>answer</Mono>&apos;s weights,
+                            then save it to compare it too.
                         </li>
                         <li>
-                            Move P earlier or later and sweep again: the window follows P&apos;s
+                            Move P earlier or later and sweep again: the disagreement follows its
                             span.
                         </li>
-                        <li>
-                            Swap a name token on the embedding row (Intervene, token labels): every
-                            algorithm then answers about the other name.
-                        </li>
-                        <li>
-                            Write a custom Python function, save, and compare it with the
-                            paper&apos;s.
-                        </li>
+                        <li>Download an algorithm to share it; Open, From file reads it back.</li>
+                        <li>Write a custom Python function, save it, and compare.</li>
                     </ul>
                 </>
             ),
+            action: { label: "Finish", run: c.close },
             done: false,
         },
     ];
 }
-
-export const WALKTHROUGH_TARGET = TARGET;

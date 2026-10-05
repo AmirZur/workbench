@@ -26,12 +26,14 @@ import type {
     Cell,
     Ref,
     Variable,
+    WalkthroughState,
 } from "@/types/algorithmHypothesis";
 import {
     evaluate,
     inferTypes,
     moveProblem,
     outputOf,
+    parseAlgorithmFile,
     problems as algorithmProblems,
     removeVariable,
     sameDefinition,
@@ -41,7 +43,11 @@ import {
 } from "@/lib/algorithmHypothesis/engine";
 import { show } from "@/lib/algorithmHypothesis/primitives";
 import { pythonResolver, retryPython, usePythonRuntime } from "@/lib/algorithmHypothesis/python";
-import { entityBindingExample, type ExampleKind } from "@/lib/algorithmHypothesis/presets";
+import {
+    EXAMPLE_KINDS,
+    entityBindingExample,
+    type ExampleKind,
+} from "@/lib/algorithmHypothesis/presets";
 import {
     DEFAULT_PROMPT,
     DEFAULT_VIEW,
@@ -60,7 +66,12 @@ import InterventionView, {
 } from "./InterventionView";
 import SweepView, { defaultSweepState, type SweepState } from "./SweepView";
 import { Walkthrough } from "./Walkthrough";
-import { WALKTHROUGH_MODEL, WALKTHROUGH_TARGET, paperWalkthroughSteps } from "./paperWalkthrough";
+import {
+    WALKTHROUGH_GRID,
+    WALKTHROUGH_TARGET,
+    paperWalkthroughSteps,
+    type WalkthroughGoal,
+} from "./paperWalkthrough";
 import { VariablePanel } from "./VariablePanel";
 import {
     addRef,
@@ -115,11 +126,7 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
     const [mode, setMode] = useState<AlgorithmHypothesisMode>("edit");
     const [intervention, setIntervention] = useState<InterventionState | null>(null);
     const [sweep, setSweep] = useState<SweepState | null>(null);
-    const [walkthrough, setWalkthrough] = useState<{
-        open: boolean;
-        step: number;
-        done?: string[];
-    } | null>(null);
+    const [walkthrough, setWalkthrough] = useState<WalkthroughState | null>(null);
     const hydratedChart = useRef<string | null>(null);
     useEffect(() => {
         if (!chart || hydratedChart.current === chart.id) return;
@@ -135,12 +142,14 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
 
     const writeChartData = useCallback(
         async (next: AlgorithmHypothesisChartData) => {
-            await setChartData(chartId, next, "algorithm-hypothesis");
+            // The cache first: a pending autosave then can't write the previous
+            // algorithm back while this write is in flight.
             queryClient.setQueryData(
                 queryKeys.charts.chart(chartId),
                 (prev: Awaited<ReturnType<typeof getChartById>> | undefined) =>
                     prev ? { ...prev, data: next } : prev,
             );
+            await setChartData(chartId, next, "algorithm-hypothesis");
         },
         [chartId, queryClient],
     );
@@ -172,14 +181,26 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
     // The version saved as complete; other algorithms compare against saved versions.
     const [savedDefinition, setSavedDefinition] = useState<AlgorithmDefinition | null>(null);
     const [draft, setDraft] = useState<VariableDraft | null>(null);
+    // Which algorithm `definition` is; it lags the chart's for a render after a switch.
+    const [definitionId, setDefinitionId] = useState<string | null>(null);
+    // A variable to open once the algorithm switched to has loaded.
+    const openOnLoad = useRef<{ algorithmId: string; variable: string } | null>(null);
     const hydratedAlgorithm = useRef<string | null>(null);
     useEffect(() => {
         if (!algorithmRow || hydratedAlgorithm.current === algorithmRow.id) return;
-        setDefinition(upgradeDefinition(algorithmRow.definition));
+        const loaded = upgradeDefinition(algorithmRow.definition);
+        setDefinition(loaded);
+        setDefinitionId(algorithmRow.id);
         setSavedDefinition(
             algorithmRow.savedDefinition ? upgradeDefinition(algorithmRow.savedDefinition) : null,
         );
-        setDraft(null);
+        const open = openOnLoad.current;
+        openOnLoad.current = null;
+        const v =
+            open?.algorithmId === algorithmRow.id
+                ? loaded.variables.find((x) => x.id === open.variable)
+                : undefined;
+        setDraft(v ? draftFromVariable(loaded, v) : null);
         hydratedAlgorithm.current = algorithmRow.id;
     }, [algorithmRow]);
 
@@ -522,18 +543,6 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
         capture("param_changed", { tool: "algorithm-hypothesis", param: "mode", value: next });
     };
 
-    const onLoadExample = (kind: ExampleKind) => {
-        if (!definition) return;
-        const built = entityBindingExample(kind, tokens, definition.grid, prompt);
-        if (typeof built === "string") {
-            toast.error(built);
-            return;
-        }
-        commit(built);
-        setDraft(null);
-        capture("param_changed", { tool: "algorithm-hypothesis", param: "example", value: kind });
-    };
-
     const switchAlgorithm = async (id: string | "new" | "duplicate") => {
         if (!algorithmId || id === algorithmId) return;
         flush();
@@ -556,6 +565,33 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
         }
     };
 
+    /** Opens an algorithm from a JSON file as a new algorithm, on its own prompt. */
+    const openFile = async (file: File) => {
+        let opened: AlgorithmDefinition;
+        try {
+            opened = parseAlgorithmFile(await file.text());
+        } catch (e) {
+            toast.error(`Couldn't open ${file.name}. ${(e as Error).message}`);
+            return;
+        }
+        flush();
+        try {
+            const row = await createAlgorithm({ workspaceId, definition: opened });
+            // Variables are anchored by token position, so show them on their template.
+            const nextPrompt =
+                opened.variables.length && opened.template ? opened.template : prompt;
+            setDraft(null);
+            setPrompt(nextPrompt);
+            await writeChartData({ ...chartState(row.id), prompt: nextPrompt });
+            toast.success(
+                `Opened “${opened.name}” from ${file.name}. Save it to compare it with your other algorithms.`,
+            );
+            capture("param_changed", { tool: "algorithm-hypothesis", param: "algorithm_opened" });
+        } catch {
+            toast.error(`Couldn't open ${file.name}.`);
+        }
+    };
+
     // ------------------------------------------------- saving a complete version
 
     const { mutateAsync: saveVersion, isPending: savingVersion } = useSaveAlgorithmVersion();
@@ -573,8 +609,11 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
         pending.current = null;
         const row = await saveVersion({ id, definition });
         if (!row) return;
-        setSavedDefinition(definition);
-        setSaveState("saved");
+        // Unless another algorithm opened in the meantime.
+        if (hydratedAlgorithm.current === id) {
+            setSavedDefinition(definition);
+            setSaveState("saved");
+        }
         toast.success(
             `Saved “${definition.name}”. Intervene compares it with your other algorithms.`,
         );
@@ -623,54 +662,87 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
     const toggleWalkthrough = () =>
         setWalkthrough((w) => ({ ...w, open: !w?.open, step: w?.step ?? 0 }));
 
-    /** Step 1: a new algorithm on gemma-2-2b-it, so the user's own stay as they are. */
-    const startWalkthrough = async () => {
-        const grid = GRID_OPTIONS.find((o) => o.id === WALKTHROUGH_MODEL)?.grid;
-        if (!grid) return;
+    const walkthroughIds = walkthrough?.algorithms ?? {};
+    // The walkthrough algorithm open now, once its definition has loaded.
+    const walkthroughCurrent =
+        definitionId === algorithmId
+            ? (EXAMPLE_KINDS.find((k) => walkthroughIds[k] === algorithmId) ?? null)
+            : null;
+
+    /** Opens one of the walkthrough's algorithms, creating it the first time, in
+     * the state a step leaves it in. */
+    const walkthroughGo = async (kind: ExampleKind, goal: WalkthroughGoal = {}) => {
+        const nextMode = goal.mode ?? "edit";
+        const apply = () => {
+            setPrompt(WALKTHROUGH_TARGET);
+            setMode(nextMode);
+            setMarkingSpecials(false);
+            if (goal.intervention) setIntervention(goal.intervention);
+            if (goal.sweep) setSweep(goal.sweep);
+        };
+        if (walkthroughCurrent === kind) {
+            apply();
+            const v = definition.variables.find((x) => x.id === goal.variable);
+            setDraft(v ? draftFromVariable(definition, v) : null);
+            return;
+        }
         flush();
         try {
-            const row = await createAlgorithm({
-                workspaceId,
-                definition: { ...blankAlgorithm("Paper walkthrough", WALKTHROUGH_TARGET), grid },
-            });
+            const known = walkthroughIds[kind];
+            let id = known && (algorithmList?.some((a) => a.id === known) ?? true) ? known : null;
+            if (!id) {
+                const built = entityBindingExample(
+                    kind,
+                    tokenizeAbstract(WALKTHROUGH_TARGET),
+                    WALKTHROUGH_GRID,
+                    WALKTHROUGH_TARGET,
+                );
+                if (typeof built === "string") throw new Error(built);
+                id = (await createAlgorithm({ workspaceId, definition: built })).id;
+            }
+            apply();
             setDraft(null);
-            setPrompt(WALKTHROUGH_TARGET);
-            setMode("edit");
-            const next = { open: true, step: 1 };
+            openOnLoad.current = goal.variable
+                ? { algorithmId: id, variable: goal.variable }
+                : null;
+            const next: WalkthroughState = {
+                ...walkthrough,
+                open: true,
+                step: walkthrough?.step ?? 0,
+                algorithms: { ...walkthroughIds, [kind]: id },
+            };
             setWalkthrough(next);
             await writeChartData({
-                ...chartState(row.id),
+                ...chartState(id),
                 prompt: WALKTHROUGH_TARGET,
-                mode: "edit",
+                mode: nextMode,
+                ...(goal.intervention ? { intervention: goal.intervention } : {}),
+                ...(goal.sweep ? { sweep: goal.sweep } : {}),
                 walkthrough: next,
             });
+            capture("param_changed", {
+                tool: "algorithm-hypothesis",
+                param: "walkthrough",
+                value: kind,
+            });
         } catch {
-            toast.error("Couldn't start the walkthrough.");
+            toast.error("Couldn't open the walkthrough's algorithm.");
         }
     };
 
     const walkthroughSteps = walkthrough?.open
         ? paperWalkthroughSteps({
+              current: walkthroughCurrent,
               definition,
-              prompt,
-              tokens,
-              tokensLoading,
+              openVariable: draft && !draft.isNew ? draft.id : null,
               mode,
               versionState,
               problemCount: problems.length,
               intervention,
               sweep,
-              start: () => void startWalkthrough(),
-              loadExample: onLoadExample,
+              go: (kind, goal) => void walkthroughGo(kind, goal),
               save: () => void onSaveVersion(),
-              intervene: (state) => {
-                  setIntervention(state);
-                  setMode("intervene");
-              },
-              sweepWith: (state) => {
-                  setSweep(state);
-                  setMode("sweep");
-              },
+              close: () => setWalkthrough({ ...walkthrough, open: false }),
           })
         : [];
     // A step stays checked once its state has been in place.
@@ -679,7 +751,9 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
         .map((st) => st.id);
     if (walkthrough && newlyDone.length)
         queueMicrotask(() =>
-            setWalkthrough((w) => (w ? { ...w, done: [...(w.done ?? []), ...newlyDone] } : w)),
+            setWalkthrough((w) =>
+                w ? { ...w, done: [...new Set([...(w.done ?? []), ...newlyDone])] } : w,
+            ),
         );
     const walkthroughPanel = walkthrough?.open ? (
         <Walkthrough
@@ -907,16 +981,13 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
                 onRemoveInput={onRemoveInput}
                 markingSpecials={markingSpecials}
                 onToggleMarking={() => setMarkingSpecials((m) => !m)}
-                onWalkthrough={() =>
-                    setWalkthrough({ ...walkthrough, open: true, step: walkthrough?.step ?? 0 })
-                }
                 onEditVariable={(id) => {
                     const v = definition.variables.find((x) => x.id === id);
                     if (v) setDraft(draftFromVariable(definition, v));
                 }}
-                onLoadExample={onLoadExample}
                 onUseCurrentPrompt={() => commit({ ...definition, template: prompt })}
                 onSwitchAlgorithm={(id) => void switchAlgorithm(id)}
+                onOpenFile={(file) => void openFile(file)}
             />
         );
 

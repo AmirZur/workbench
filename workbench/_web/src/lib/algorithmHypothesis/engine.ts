@@ -315,6 +315,54 @@ export function upgradeDefinition(raw: unknown): AlgorithmDefinition {
     return withInferredTypes({ ...def, schema: ALGORITHM_SCHEMA_ID, variables });
 }
 
+/** An algorithm from a JSON file as Download writes it, in any schema version.
+ * Throws an Error that says what is wrong with the file. */
+export function parseAlgorithmFile(text: string): AlgorithmDefinition {
+    let raw: unknown;
+    try {
+        raw = JSON.parse(text);
+    } catch {
+        throw new Error("It isn't valid JSON.");
+    }
+    const def = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as Record<
+        string,
+        unknown
+    >;
+    const schema = typeof def.schema === "string" ? def.schema : "";
+    const version = /^algorithm-hypothesis\/v(\d+)$/.exec(schema);
+    if (!version) throw new Error("It isn't an algorithm saved with Download.");
+    if (Number(version[1]) > 3)
+        throw new Error(`It uses ${schema}, which is newer than this version reads.`);
+    const grid = (def.grid ?? {}) as Partial<AlgorithmDefinition["grid"]>;
+    if (
+        (grid.kind !== "abstract" && grid.kind !== "model") ||
+        !Number.isInteger(grid.layers) ||
+        grid.layers! < 1 ||
+        (grid.kind === "model" && typeof grid.model !== "string")
+    )
+        throw new Error("Its grid is missing or malformed.");
+    if (!Array.isArray(def.variables)) throw new Error("It has no list of variables.");
+    def.variables.forEach((x: Partial<Variable> | null, i) => {
+        const ok =
+            !!x &&
+            typeof x.id === "string" &&
+            typeof x.name === "string" &&
+            Number.isInteger(x.cell?.layer) &&
+            Number.isInteger(x.cell?.token) &&
+            typeof x.function?.kind === "string" &&
+            Array.isArray(x.args) &&
+            x.args.every((a) => typeof a?.name === "string" && Array.isArray(a.refs));
+        if (!ok) throw new Error(`Variable ${i + 1} is malformed.`);
+    });
+    return upgradeDefinition({
+        ...def,
+        name: typeof def.name === "string" && def.name.trim() ? def.name : "Imported algorithm",
+        description: typeof def.description === "string" ? def.description : "",
+        template: typeof def.template === "string" ? def.template : "",
+        output: typeof def.output === "string" ? def.output : null,
+    });
+}
+
 /** Problems with one variable where it stands. */
 function variableProblems(
     def: AlgorithmDefinition,

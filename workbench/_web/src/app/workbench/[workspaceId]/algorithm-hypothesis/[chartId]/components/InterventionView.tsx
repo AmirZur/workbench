@@ -29,7 +29,6 @@ import { EXAMPLE_PROMPTS } from "@/lib/algorithmHypothesis/grids";
 import { useComparedAlgorithms, type ComparedAlgorithm } from "./comparison";
 import { GridHeading, InputRow, useTokens, type Role } from "./inputs";
 import { AlgorithmGrid, rowOf, tokenLabel, type CellMark } from "./AlgorithmGrid";
-import { ColorSwatch } from "./glyphs";
 import { ModeTabs } from "./ModeTabs";
 
 /**
@@ -37,7 +36,7 @@ import { ModeTabs } from "./ModeTabs";
  * the target grid, or click one and then the other, to run an interchange
  * intervention on the algorithm. The counterfactual grid tints the values it
  * changed purple, and the summary runs the same intervention on every
- * algorithm in the workspace and on the paper's examples.
+ * saved algorithm in the workspace.
  */
 
 export type InterventionState = NonNullable<AlgorithmHypothesisChartData["intervention"]>;
@@ -532,7 +531,6 @@ interface SummaryRow {
 const GROUP_LABEL: Record<ComparedAlgorithm["group"], string | null> = {
     this: null,
     saved: "Saved algorithms",
-    paper: "Paper examples",
 };
 
 function InterventionSummary({
@@ -612,8 +610,8 @@ function InterventionSummary({
                 {!spec || !cells || !result ? (
                     <p className="text-muted-foreground">
                         Drag a cell of the source grid onto a cell of the target grid. The
-                        counterfactual output appears here, next to what every algorithm in this
-                        workspace and the paper&apos;s examples predict for the same intervention.
+                        counterfactual output appears here, next to what every saved algorithm in
+                        this workspace predicts for the same intervention.
                     </p>
                 ) : (
                     <>
@@ -682,12 +680,6 @@ function InterventionSummary({
                                             <tr key={a.key} className="border-t first:border-t-0">
                                                 <td className="py-1.5 pr-2 align-top">
                                                     <span className="flex items-center gap-1.5">
-                                                        {a.color && (
-                                                            <ColorSwatch
-                                                                color={a.color}
-                                                                className="size-2.5"
-                                                            />
-                                                        )}
                                                         <span className="truncate">{a.name}</span>
                                                         {a.note && (
                                                             <span className="text-muted-foreground">
@@ -742,8 +734,7 @@ function InterventionSummary({
                             </table>
                             <p className="text-xs text-muted-foreground">
                                 Saved algorithms use their saved version; save an algorithm in Edit
-                                to add it here. The paper&apos;s examples are placed on this
-                                template. “No swap”: the two cells share no variable in that
+                                to add it here. “No swap”: the two cells share no variable in that
                                 algorithm.
                             </p>
                         </div>

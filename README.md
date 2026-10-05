@@ -62,6 +62,11 @@ database schema changed (it only adds tables and columns).
 Open the workspace, then choose **Algorithm Hypothesis** in the left sidebar. The header shows
 the model backend as unavailable; Algorithm Hypothesis doesn't use it.
 
+- **Walkthrough**, next to the mode tabs, builds the paper's positional, lexical and reflexive
+  algorithms step by step and intervenes on them.
+- **Sharing an algorithm:** *Download* (Algorithm panel, Export) writes it as a JSON file; in
+  another copy, *Open*, *From file…* opens the file as a new algorithm. Save it there to compare it
+  with the others in Intervene and Sweep.
 - **Custom Python functions** run in the browser with Pyodide, downloaded once (about 10 MB) from
   cdn.jsdelivr.net. To host it yourself, set `NEXT_PUBLIC_PYODIDE_URL`.
 - **gemma-2-2b-it grids** use only the model's tokenizer. Its official copy is gated, so without an

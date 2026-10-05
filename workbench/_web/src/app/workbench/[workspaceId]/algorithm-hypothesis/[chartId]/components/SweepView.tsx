@@ -24,7 +24,6 @@ import { EXAMPLE_PROMPTS } from "@/lib/algorithmHypothesis/grids";
 import { useComparedAlgorithms, type ComparedAlgorithm } from "./comparison";
 import { InputRow, ROLE_DOT, useTokens, type Role } from "./inputs";
 import { layerLabel, tokenLabel } from "./AlgorithmGrid";
-import { ColorSwatch } from "./glyphs";
 import { ModeTabs } from "./ModeTabs";
 
 /**
@@ -516,12 +515,6 @@ export default function SweepView({
                             {strips.map((s) => (
                                 <li key={s.algorithm.key} className="flex flex-col gap-0.5">
                                     <span className="flex items-center gap-1.5 text-xs font-medium">
-                                        {s.algorithm.color && (
-                                            <ColorSwatch
-                                                color={s.algorithm.color}
-                                                className="size-2.5"
-                                            />
-                                        )}
                                         {s.algorithm.name}
                                         {s.algorithm.note && (
                                             <span className="font-normal text-muted-foreground">
@@ -607,17 +600,10 @@ function Strips({ strips, palette }: { strips: Swept[]; palette: Map<string, str
                         title={s.algorithm.note}
                     >
                         <span className="flex items-center gap-1 font-medium">
-                            {s.algorithm.color && (
-                                <ColorSwatch color={s.algorithm.color} className="size-2.5" />
-                            )}
                             <span className="truncate">{s.algorithm.name}</span>
                         </span>
                         <span className="truncate text-muted-foreground">
-                            {s.algorithm.group === "saved"
-                                ? "saved"
-                                : s.algorithm.group === "paper"
-                                  ? (s.algorithm.note ?? "paper")
-                                  : "this algorithm"}
+                            {s.algorithm.group === "saved" ? "saved" : "this algorithm"}
                         </span>
                     </span>
                 ))}
@@ -676,9 +662,6 @@ function FullGrids({
             {maps.map((m) => (
                 <figure key={m.algorithm.key} className="flex flex-col gap-1">
                     <figcaption className="flex items-center gap-1.5 text-xs font-medium">
-                        {m.algorithm.color && (
-                            <ColorSwatch color={m.algorithm.color} className="size-2.5" />
-                        )}
                         {m.algorithm.name}
                         {m.algorithm.note && (
                             <span className="font-normal text-muted-foreground">

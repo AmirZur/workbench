@@ -83,14 +83,25 @@ def test_bundle_runs_without_causalab(tmp_path):
     assert json.loads(out.stdout) == [{"id": 1, "ok": True, "value": 2}]
 
 
-def test_mixed_example_is_colored_by_algorithm():
+def test_examples_are_colored_by_the_algorithm_each_variable_serves():
     alg = entity_binding("mixed", TARGET, 8, template=PROMPTS["target"]).by_id()
     assert (alg["q_pos"].color, alg["q_pos"].tags) == ("indigo", ["positional"])
     assert (alg["P"].color, alg["L"].color, alg["R"].color) == ("indigo", "emerald", "amber")
     assert (alg["bind1"].color, alg["bind1"].tags) == (None, ["lexical", "reflexive"])
     assert (alg["answer"].color, alg["answer"].tags) == (None, [])
-    plain = entity_binding("positional", TARGET, 8, template=PROMPTS["target"]).to_dict()
-    assert all("color" not in v and "tags" not in v for v in plain["variables"])
+    # Alone, each algorithm colors what only it uses; shared variables stay black.
+    pos = entity_binding("positional", TARGET, 8, template=PROMPTS["target"]).by_id()
+    assert {pos[i].color for i in ("pos1", "id1", "bind1", "q_pos", "P")} == {"indigo"}
+    lex = entity_binding("lexical", TARGET, 8, template=PROMPTS["target"]).by_id()
+    assert (lex["bind1"].color, lex["q_key"].color, lex["L"].color) == (None, "emerald", "emerald")
+    ref = entity_binding("reflexive", TARGET, 8, template=PROMPTS["target"]).to_dict()
+    assert [v["id"] for v in ref["variables"] if "color" not in v] == [
+        "bind1",
+        "bind2",
+        "bind3",
+        "bind4",
+        "answer",
+    ]
 
 
 def test_color_tags_and_inputs_round_trip():

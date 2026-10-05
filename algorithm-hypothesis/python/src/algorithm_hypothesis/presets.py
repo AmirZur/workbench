@@ -35,14 +35,18 @@ DESCRIPTIONS = {
     "mixed": "All three signals at once, combined by the paper's Eq. 2 into a distribution over the entities.",
 }
 
-# The mixed example colors and tags each variable by the algorithm it serves.
+# Each example colors a variable by the one algorithm it serves; variables
+# shared by several algorithms stay black.
 ALGORITHM_COLORS = {"positional": "indigo", "lexical": "emerald", "reflexive": "amber"}
 
 
-def _serves(var_id: str) -> list[str]:
-    """Which of the three algorithms a variable of the mixed example serves. The
-    bindings serve both lexical and reflexive retrieval."""
+def _serves(var_id: str, kind: str) -> list[str]:
+    """Which of the three algorithms a variable of an example serves. The
+    positional example binds position IDs; the others bind names, which serve
+    both lexical and reflexive retrieval."""
     if var_id.startswith(("pos", "id")) or var_id in ("q_pos", "P"):
+        return ["positional"]
+    if var_id.startswith("bind") and kind == "positional":
         return ["positional"]
     if var_id in ("q_key", "L"):
         return ["lexical"]
@@ -193,10 +197,9 @@ def entity_binding(
                 )
             )
 
-    if kind == "mixed":
-        for v in vs:
-            v.tags = _serves(v.id)
-            v.color = ALGORITHM_COLORS[v.tags[0]] if len(v.tags) == 1 else None
+    for v in vs:
+        v.tags = _serves(v.id, kind)
+        v.color = ALGORITHM_COLORS[v.tags[0]] if len(v.tags) == 1 else None
 
     output = "answer"
     if a < n_layers - 1:

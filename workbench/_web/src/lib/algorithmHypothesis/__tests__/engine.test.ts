@@ -18,6 +18,7 @@ import {
     interchangeIntervention,
     moveProblem,
     outputOf,
+    parseAlgorithmFile,
     problems,
     removeVariable,
     tokenSweep,
@@ -301,7 +302,7 @@ describe("editing", () => {
 });
 
 describe("color and tags", () => {
-    it("the mixed example is colored by the algorithm each variable serves", () => {
+    it("the examples are colored by the algorithm each variable serves", () => {
         const mixed = entityBindingExample(
             "mixed",
             TARGET,
@@ -317,13 +318,21 @@ describe("color and tags", () => {
         ]).toEqual(["indigo", "indigo", "emerald", "amber"]);
         expect(v.get("bind1")!.tags).toEqual(["lexical", "reflexive"]);
         expect(v.get("bind1")!.color).toBeUndefined();
-        const plain = entityBindingExample(
-            "positional",
-            TARGET,
-            { kind: "abstract", layers: 8 },
-            G.prompts.target,
-        ) as AlgorithmDefinition;
-        expect(plain.variables.every((x) => !x.color && !x.tags)).toBe(true);
+        // Alone, each algorithm colors what only it uses; shared variables stay black.
+        const black = (kind: "positional" | "lexical" | "reflexive") =>
+            (
+                entityBindingExample(
+                    kind,
+                    TARGET,
+                    { kind: "abstract", layers: 8 },
+                    G.prompts.target,
+                ) as AlgorithmDefinition
+            ).variables
+                .filter((x) => !x.color)
+                .map((x) => x.id);
+        expect(black("positional")).toEqual(["answer"]);
+        expect(black("lexical")).toEqual(["bind1", "bind2", "bind3", "bind4", "answer"]);
+        expect(black("reflexive")).toEqual(["bind1", "bind2", "bind3", "bind4", "answer"]);
     });
 });
 
@@ -413,6 +422,41 @@ describe("older schemas", () => {
         expect(k.function).toEqual({ kind: "primitive", name: "copy", options: {} });
         expect(l.function.kind === "python" && l.function.source).toContain(
             "def compute(key, keys, values)",
+        );
+    });
+});
+
+describe("opening a file", () => {
+    it("reads what Download writes, and says what's wrong with anything else", () => {
+        const alg = entityBindingExample(
+            "reflexive",
+            TARGET,
+            { kind: "abstract", layers: 8 },
+            G.prompts.target,
+        ) as AlgorithmDefinition;
+        expect(parseAlgorithmFile(JSON.stringify(alg, null, 2))).toEqual(alg);
+
+        const { name: _name, ...unnamed } = alg;
+        void _name;
+        expect(parseAlgorithmFile(JSON.stringify(unnamed)).name).toBe("Imported algorithm");
+
+        const error = (text: string) => {
+            try {
+                parseAlgorithmFile(text);
+                return null;
+            } catch (e) {
+                return (e as Error).message;
+            }
+        };
+        expect(error("{")).toBe("It isn't valid JSON.");
+        expect(error("[]")).toBe("It isn't an algorithm saved with Download.");
+        expect(error(JSON.stringify({ ...alg, schema: "algorithm-hypothesis/v9" }))).toContain(
+            "newer",
+        );
+        expect(error(JSON.stringify({ ...alg, grid: { kind: "abstract" } }))).toContain("grid");
+        const broken = { ...alg, variables: [...alg.variables, { id: "x", name: "x" }] };
+        expect(error(JSON.stringify(broken))).toBe(
+            `Variable ${alg.variables.length + 1} is malformed.`,
         );
     });
 });
