@@ -51,8 +51,8 @@ def test_every_primitive_source_runs_in_the_runtime():
         source = PRIMITIVES[name].source.replace(f"def {name}(", "def compute(")
         assert runtime.call(source, args, TARGET) == {"ok": True, "value": expected}, name
     mixture = PRIMITIVES["mixture"].source.replace("def mixture(", "def compute(")
-    out = runtime.call(mixture, {"P": 2, "L": None, "R": None, "bindings": [{"kind": "pair", "key": ale, "value": jam}]}, TARGET)
-    assert out["ok"] and out["value"]["kind"] == "distribution"
+    out = runtime.call(mixture.replace('weights: str = ""', 'weights: str = "2, 1"'), {"answers": [ale, jam, ale]}, TARGET)
+    assert out == {"ok": True, "value": {"kind": "distribution", "items": [{"label": "ale", "p": 0.75}, {"label": "jam", "p": 0.25}]}}
 
 
 def test_runtime_matches_the_compiled_model():
@@ -87,21 +87,16 @@ def test_examples_are_colored_by_the_algorithm_each_variable_serves():
     alg = entity_binding("mixed", TARGET, 8, template=PROMPTS["target"]).by_id()
     assert (alg["q_pos"].color, alg["q_pos"].tags) == ("indigo", ["positional"])
     assert (alg["P"].color, alg["L"].color, alg["R"].color) == ("indigo", "emerald", "amber")
-    assert (alg["bind1"].color, alg["bind1"].tags) == (None, ["lexical", "reflexive"])
+    assert [alg[f"{p}_answer"].color for p in ("pos", "lex", "ref")] == ["indigo", "emerald", "amber"]
+    assert (alg["pos_bind1"].color, alg["bind1"].color, alg["bind1"].tags) == ("indigo", None, ["lexical", "reflexive"])
     assert (alg["answer"].color, alg["answer"].tags) == (None, [])
-    # Alone, each algorithm colors what only it uses; shared variables stay black.
-    pos = entity_binding("positional", TARGET, 8, template=PROMPTS["target"]).by_id()
-    assert {pos[i].color for i in ("pos1", "id1", "bind1", "q_pos", "P")} == {"indigo"}
-    lex = entity_binding("lexical", TARGET, 8, template=PROMPTS["target"]).by_id()
-    assert (lex["bind1"].color, lex["q_key"].color, lex["L"].color) == (None, "emerald", "emerald")
-    ref = entity_binding("reflexive", TARGET, 8, template=PROMPTS["target"]).to_dict()
-    assert [v["id"] for v in ref["variables"] if "color" not in v] == [
-        "bind1",
-        "bind2",
-        "bind3",
-        "bind4",
-        "answer",
-    ]
+    # Alone, each algorithm colors what only it uses; the shared bindings stay black.
+    pos = entity_binding("positional", TARGET, 8, template=PROMPTS["target"]).to_dict()
+    assert all(v.get("color") == "indigo" for v in pos["variables"])
+    for kind, color in (("lexical", "emerald"), ("reflexive", "amber")):
+        alone = entity_binding(kind, TARGET, 8, template=PROMPTS["target"]).to_dict()["variables"]
+        assert [v["id"] for v in alone if "color" not in v] == ["bind1", "bind2", "bind3", "bind4"]
+        assert {v.get("color") for v in alone if not v["id"].startswith("bind")} == {color}
 
 
 def test_color_tags_and_inputs_round_trip():

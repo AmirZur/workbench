@@ -15,6 +15,9 @@
  * Reflexive: the query token retrieves the entity itself (a pointer), and the
  * last token dereferences it: it retrieves by value, which finds nothing if the
  * entity isn't in context.
+ * Mixed: all three at once, each computing its own answer (pos_answer,
+ * lex_answer, ref_answer; the positional bindings become pos_bind), combined
+ * linearly into the answer at the last token.
  *
  * Mirrors presets.py in the `algorithm_hypothesis` Python package.
  */
@@ -47,7 +50,7 @@ const DESCRIPTIONS: Record<ExampleKind, string> = {
         "Each entity is bound to its name; the recalled name itself retrieves the bound entity.",
     reflexive:
         "The query retrieves a pointer to the answer entity itself, which is dereferenced at the end. Fails if the entity isn't in context.",
-    mixed: "All three signals at once, combined by the paper's Eq. 2 into a distribution over the entities.",
+    mixed: "The union of the three algorithms: each computes its own answer, and the last token combines them linearly into a distribution over the entities.",
 };
 
 /** Each example colors a variable by the one algorithm it serves; variables
@@ -62,14 +65,15 @@ type Mechanism = keyof typeof ALGORITHM_COLORS;
 
 /** Which of the three algorithms a variable of an example serves. The
  * positional example binds position IDs; the others bind names, which serve
- * both lexical and reflexive retrieval. */
+ * both lexical and reflexive retrieval. Mixed's answer combines all three. */
 function serves(id: string, kind: ExampleKind): Mechanism[] {
     if (id.startsWith("pos") || id.startsWith("id") || id === "q_pos" || id === "P")
         return ["positional"];
     if (id.startsWith("bind") && kind === "positional") return ["positional"];
-    if (id === "q_key" || id === "L") return ["lexical"];
-    if (id === "q_ptr" || id === "R") return ["reflexive"];
+    if (id === "q_key" || id === "L" || id === "lex_answer") return ["lexical"];
+    if (id === "q_ptr" || id === "R" || id === "ref_answer") return ["reflexive"];
     if (id.startsWith("bind")) return ["lexical", "reflexive"];
+    if (id === "answer" && kind !== "mixed") return [kind];
     return [];
 }
 
@@ -111,6 +115,14 @@ function findSlots(tokens: string[]): EntityBindingSlots | string {
         return "The examples need a question of the form “What does {person} love?”.";
     if (love - does < 2) return "The question is missing the person.";
     return { people, foods, query: love - 1, last: tokens.length - 1 };
+}
+
+/** The names in an entity-binding prompt (“Ann loves ale, … What does Tim
+ * love?”), which the paper's algorithms mark as special tokens; none for any
+ * other prompt. */
+export function nameTokens(tokens: string[]): number[] {
+    const s = findSlots(tokens);
+    return typeof s === "string" ? [] : [...s.people, s.query];
 }
 
 // Python's round() rounds halves to even; match it.
@@ -177,29 +189,35 @@ export function entityBindingExample(
             ["token", [tok(token)]],
             ["specials", specials.filter((i) => i <= token).map(tok)],
         ]);
-    const retrieve = (id: string, key: Ref, match: "key" | "value") =>
+    // Each algorithm's answer. Mixed computes all three a layer early and
+    // combines them where the others answer.
+    if (kind === "mixed" && a - 1 <= last) return "The mixed example needs at least 7 layers.";
+    const at = kind === "mixed" ? a - 1 : a;
+    const answer = (prefix: string) => (kind === "mixed" ? `${prefix}_answer` : "answer");
+    const retrieve = (id: string, key: Ref, pairs: string[], match: "key" | "value") =>
         variable(
             id,
-            a,
+            at,
             s.last,
             "retrieve",
             [
                 ["key", [key]],
-                ["pairs", bind.map(ref)],
+                ["pairs", pairs.map(ref)],
             ],
             { match },
         );
 
-    if (kind === "positional") {
+    if (kind === "positional" || kind === "mixed") {
         // Copying a position ID onto the entity takes one layer (KeyOf), binding it another.
         const boundAt = Math.max(bound, names + 2);
+        const pbind = kind === "positional" ? bind : ids("pos_bind");
         s.people.forEach((p, k) => vs.push(position(pos[k], names, p)));
         s.foods.forEach((f, k) =>
             vs.push(variable(idOf[k], names + 1, f, "key_of", [["pair", [ref(pos[k])]]])),
         );
         s.foods.forEach((f, k) =>
             vs.push(
-                variable(bind[k], boundAt, f, "pair", [
+                variable(pbind[k], boundAt, f, "pair", [
                     ["key", [ref(idOf[k])]],
                     ["value", [tok(f)]],
                 ]),
@@ -207,8 +225,9 @@ export function entityBindingExample(
         );
         vs.push(position("q_pos", q, s.query));
         vs.push(variable("P", last, s.last, "key_of", [["pair", [ref("q_pos")]]]));
-        vs.push(retrieve("answer", ref("P"), "key"));
-    } else {
+        vs.push(retrieve(answer("pos"), ref("P"), pbind, "key"));
+    }
+    if (kind !== "positional")
         s.foods.forEach((f, k) =>
             vs.push(
                 variable(bind[k], bound, f, "pair", [
@@ -217,49 +236,40 @@ export function entityBindingExample(
                 ]),
             ),
         );
-        if (kind === "mixed") vs.push(position("q_pos", q, s.query));
-        if (kind === "lexical" || kind === "mixed")
-            vs.push(variable("q_key", q, s.query, "copy", [["x", [tok(s.query)]]]));
-        if (kind === "reflexive" || kind === "mixed")
-            vs.push(
-                variable(
-                    "q_ptr",
-                    q,
-                    s.query,
-                    "retrieve",
-                    [
-                        ["key", [tok(s.query)]],
-                        ["pairs", bind.map(ref)],
-                    ],
-                    { match: "key" },
-                ),
-            );
-        if (kind === "mixed")
-            vs.push(variable("P", last, s.last, "key_of", [["pair", [ref("q_pos")]]]));
-        if (kind === "lexical" || kind === "mixed")
-            vs.push(variable("L", last, s.last, "copy", [["x", [ref("q_key")]]]));
-        if (kind === "reflexive" || kind === "mixed")
-            vs.push(variable("R", last, s.last, "copy", [["x", [ref("q_ptr")]]]));
-        if (kind === "lexical") vs.push(retrieve("answer", ref("L"), "key"));
-        // Dereference: the bound entity equal to R, if there is one.
-        else if (kind === "reflexive") vs.push(retrieve("answer", ref("R"), "value"));
-        else
-            vs.push(
-                variable(
-                    "answer",
-                    a,
-                    s.last,
-                    "mixture",
-                    [
-                        ["P", [ref("P")]],
-                        ["L", [ref("L")]],
-                        ["R", [ref("R")]],
-                        ["bindings", bind.map(ref)],
-                    ],
-                    { w_pos: 3, sigma: 0.7, w_lex: 2.6, w_ref: 2.6 },
-                ),
-            );
+    if (kind === "lexical" || kind === "mixed") {
+        vs.push(variable("q_key", q, s.query, "copy", [["x", [tok(s.query)]]]));
+        vs.push(variable("L", last, s.last, "copy", [["x", [ref("q_key")]]]));
+        vs.push(retrieve(answer("lex"), ref("L"), bind, "key"));
     }
+    if (kind === "reflexive" || kind === "mixed") {
+        vs.push(
+            variable(
+                "q_ptr",
+                q,
+                s.query,
+                "retrieve",
+                [
+                    ["key", [tok(s.query)]],
+                    ["pairs", bind.map(ref)],
+                ],
+                { match: "key" },
+            ),
+        );
+        vs.push(variable("R", last, s.last, "copy", [["x", [ref("q_ptr")]]]));
+        // Dereference: the bound entity equal to R, if there is one.
+        vs.push(retrieve(answer("ref"), ref("R"), bind, "value"));
+    }
+    if (kind === "mixed")
+        vs.push(
+            variable(
+                "answer",
+                a,
+                s.last,
+                "mixture",
+                [["answers", ["pos", "lex", "ref"].map((p) => ref(answer(p)))]],
+                { weights: "1, 1, 1" },
+            ),
+        );
 
     for (const v of vs) {
         const tags = serves(v.id, kind);

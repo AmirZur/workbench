@@ -100,6 +100,8 @@
     renderAlgs();
     host.querySelector("#ci-pair").value = state.pair;
     const a = alg();
+    // Colors are for editing; the intervention view draws every variable black.
+    const plain = { ...a, vars: a.vars.map(({ color, ...v }) => v) };
     const st = srcTokens();
     const tt = tgtTokens();
     host.querySelector('[data-slot="src-prompt"]').textContent = PAIRS[state.pair].source;
@@ -111,7 +113,7 @@
 
     Object.values(ctl).forEach((c) => c && c.destroy());
     ctl.source = G.render(host.querySelector('[data-slot="src-grid"]'), {
-      alg: a,
+      alg: plain,
       tokens: st,
       role: "source",
       compact: true,
@@ -120,7 +122,7 @@
       interventionCell: res && res.ok ? state.intervention.src : null,
     });
     ctl.target = G.render(host.querySelector('[data-slot="tgt-grid"]'), {
-      alg: a,
+      alg: plain,
       tokens: tt,
       role: "target",
       compact: true,
@@ -190,7 +192,7 @@
       </div>
     `;
     ctl.result = G.render(out.querySelector('[data-slot="res-grid"]'), {
-      alg: a,
+      alg: plain,
       tokens: tt,
       ev: res.counterfactual,
       baseEv: res.target,

@@ -201,3 +201,11 @@ def test_retrieve_by_value_dereferences():
     assert show(c.interchange_intervention(cod, TARGET, (5, LAST), (5, LAST)).output) == "∅"
     types, _ = infer_types(c.algorithm)
     assert describe_type(types["answer"]) == "string"
+
+
+def test_v3_reads_unless_it_uses_the_old_mixture():
+    lexical = entity_binding("lexical", TARGET, 8, template=PROMPTS["target"]).to_dict()
+    assert Algorithm.from_dict({**lexical, "schema": "algorithm-hypothesis/v3"}).to_dict() == lexical
+    mixed = entity_binding("mixed", TARGET, 8, template=PROMPTS["target"]).to_dict()
+    with pytest.raises(ValueError, match="Export the algorithm"):
+        Algorithm.from_dict({**mixed, "schema": "algorithm-hypothesis/v3"})

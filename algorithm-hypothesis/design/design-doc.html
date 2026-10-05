@@ -7,7 +7,7 @@
 
 <div class="page">
   <header class="doc-header">
-    <div class="eyebrow"><span>Workbench</span><span aria-hidden="true">·</span><span>Design doc</span><span class="pill">Draft 0.6</span></div>
+    <div class="eyebrow"><span>Workbench</span><span aria-hidden="true">·</span><span>Design doc</span><span class="pill">Draft 0.7</span></div>
     <h1>Algorithm Hypothesis</h1>
     <p class="lede">Draw a hypothesized algorithm on a transformer's layers × tokens grid, then run interchange interventions on it with the same gestures Patch Lens uses on the network.</p>
     <div class="meta">
@@ -56,7 +56,8 @@
             <li><b>P3, Python and inputs</b> (§9.2): custom functions run in the browser with Pyodide, with errors shown in place; saved inputs per algorithm.</li>
             <li><b>P4, cell intervention</b> (§6).</li>
             <li><b>P5, token sweep</b> (§7): one token at every layer, or every position at once, for every algorithm; same position only (Q16).</li>
-            <li><b>P6, paper demo</b> (§10): a docked walkthrough of the paper's Figure 1 task on the abstract grid. It loads the positional, lexical, reflexive and mixed algorithms one by one, then intervenes and sweeps. The paper's examples now live only there.</li>
+            <li><b>P6, paper demo</b> (§10): a docked walkthrough of the paper's Figure 1 task on the abstract grid. It loads the positional, lexical, reflexive and mixed algorithms one by one, then intervenes and sweeps. The paper's examples now live only there. Mixed is the exact union of the other three, with their answers combined linearly at the last token.</li>
+            <li><b>Defaults</b>: on the paper's prompts, the names are marked as special tokens from the start. Intervene draws every variable black; colors are for editing.</li>
             <li>Earlier this week: types, glyphs, color and tags, special tokens, and the primitives Position ID, Copy, Pair, Retrieve, Index, KeyOf, ValueOf, Mixture, Constant and Custom (§4).</li>
           </ul>
           <p>Decisions Q16–Q21 are recorded in <a href="#questions">§12</a>. The mockups below are the designs; the built tool follows them.</p>
@@ -121,7 +122,7 @@
         </div>
         <div class="prose">
           <p>The names are the algorithm's <em>special tokens</em>. Position ID numbers them in order of first appearance and stores each as a position ID : name pair, so Ann is 1:Ann. In the positional algorithm, each name's pair is computed above the name (pos1 = 1:Ann), its ID is copied onto the bound entity (id1 = 1, with KeyOf), and the entity is bound to it (bind1 = 1:ale). When the question recalls a name, Position ID gives it its first mention's ID, so the second Tim is 4:Tim (q_pos). The last token takes the ID (P = 4) and retrieves the entity bound to it. The lexical and reflexive algorithms bind name : entity pairs instead.</p>
-          <p>Two more experiments from the paper map directly onto the visualizers. Figure 2 sweeps the last token across layers and finds a window (layers 16–18 in gemma-2-2b-it) where the swapped binding information decides the counterfactual output; after it, the answer itself gets copied. Section 3.4 uses a source input with <em>cod</em>, an entity the target never mentions, to separate the reflexive pointer from the answer: the pointer can't be dereferenced, so the reflexive algorithm outputs nothing. The paper's Section 4 combines the three into one model (their Eq. 2), included here as a fourth algorithm.</p>
+          <p>Two more experiments from the paper map directly onto the visualizers. Figure 2 sweeps the last token across layers and finds a window (layers 16–18 in gemma-2-2b-it) where the swapped binding information decides the counterfactual output; after it, the answer itself gets copied. Section 3.4 uses a source input with <em>cod</em>, an entity the target never mentions, to separate the reflexive pointer from the answer: the pointer can't be dereferenced, so the reflexive algorithm outputs nothing. The paper's Section 4 combines the three into one model (their Eq. 2). Here the fourth algorithm, Mixed, is their exact union: every variable of each, with each mechanism's answer computed separately and the three answers combined linearly at the last token.</p>
           <p class="figure-note">The mockups below use Figure 1's 17 word tokens, with the commas, period and “and” dropped. The editor in workbench keeps punctuation as tokens (21 abstract tokens; 22 for gemma-2-2b-it, which adds <span class="mono">&lt;bos&gt;</span>).</p>
         </div>
 
@@ -185,8 +186,8 @@
         </div>
         <div class="prose">
           <p>A pair's key and value are typed, so pairs nest: <span class="mono">(position : string) : string</span>, drawn (<svg viewBox="0 0 12 12" class="mark ty-position" aria-hidden="true"><path d="M6 1 11 6 6 11 1 6Z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>:<svg viewBox="0 0 12 12" class="mark ty-string" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="currentColor"/></svg>):<svg viewBox="0 0 12 12" class="mark ty-string" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="currentColor"/></svg>. Tokens are strings. A primitive's type follows from its arguments (§4.6): Pair applied to a position and a token is a <span class="mono">position : string</span>. A Python function declares its type in the panel. Position IDs and ints are kept apart, so an int can't be used where a position ID is expected (<a class="qref" href="#q-position">Q19</a>).</p>
-          <p><strong>Color and tags.</strong> Glyphs carry the type, so variables are black (white in dark mode) by default. Each variable can also have a color (a palette color or any other) and free-form tags, both for the researcher's own bookkeeping; neither affects what it computes. Each of the paper's examples colors a variable by the one algorithm it serves: positional indigo, lexical green, reflexive amber. Variables several algorithms share, the name bindings and the answer, stay black, so the three examples' colors together are the mixed example's.</p>
-          <p><strong>Special tokens.</strong> An algorithm designates some token positions as special, such as the names in the template. Click <em>Mark</em> in the Algorithm panel, then the token labels; special tokens are underlined. Every Position ID reads the special tokens up to its own cell, and follows when they change.</p>
+          <p><strong>Color and tags.</strong> Glyphs carry the type, so variables are black (white in dark mode) by default. Each variable can also have a color (a palette color or any other) and free-form tags, both for the researcher's own bookkeeping; neither affects what it computes. Each of the paper's examples colors a variable by the one algorithm it serves: positional indigo, lexical green, reflexive amber. Variables several algorithms share, the name bindings, stay black, as does Mixed's combined answer, so the three examples' colors together are the mixed example's. Only the editor shows colors; the intervention view draws every variable black.</p>
+          <p><strong>Special tokens.</strong> An algorithm designates some token positions as special, such as the names in the template. Click <em>Mark</em> in the Algorithm panel, then the token labels; special tokens are underlined. On the paper's prompts, the names are marked from the start, and follow the prompt while the algorithm is empty and they haven't been marked by hand. Every Position ID reads the special tokens up to its own cell, and follows when they change.</p>
         </div>
 
         <h3 class="sub" id="semantics"><span class="num">4.3</span>Residual semantics</h3>
@@ -260,7 +261,7 @@
               <tr><td>Index</td><td class="mono">i: position, values: list of V</td><td class="mono">V</td><td>The i-th value, counting from 1</td></tr>
               <tr><td>KeyOf</td><td class="mono">pair: K : V</td><td class="mono">K</td><td>The position ID of 4:Tim</td></tr>
               <tr><td>ValueOf</td><td class="mono">pair: K : V</td><td class="mono">V</td><td>The token of 4:Tim</td></tr>
-              <tr><td>Mixture (Eq. 2)</td><td class="mono">P: position, L: string, R: string, bindings: list of string : string<br><span class="muted">options: w_pos, σ, w_lex, w_ref</span></td><td class="mono">string</td><td>The paper's combined model; a distribution, shown by its top value</td></tr>
+              <tr><td>Mixture</td><td class="mono">answers: list of V<br><span class="muted">option: weights, one per answer, such as “1, 1, 1”</span></td><td class="mono">string</td><td>A linear combination of the answers, such as one per mechanism; the weights of equal answers add up. A distribution, shown by its top value (ties joined by “/”). Until schema v4 Mixture was the paper's Eq. 2; older algorithms keep it as a custom function.</td></tr>
               <tr><td>Constant</td><td class="mono"><span class="muted">options: value, type</span></td><td class="mono">the chosen type</td><td>Fixed inputs</td></tr>
               <tr><td>Custom</td><td class="mono">your own compute(…)</td><td class="mono">the declared type</td><td>Anything else, in Python</td></tr>
             </tbody>
@@ -292,10 +293,10 @@
           <p><strong>Double-click the code to edit it.</strong> The variable becomes a custom Python function that starts from the primitive's source, renamed <code>compute</code>, and keeps the same arguments and type. A custom function's arguments are the parameters of <code>compute</code>, one per named argument; an argument with several references arrives as a list, and a parameter named <code>template</code> receives the template's tokens. Its type is declared with a type picker, which nests for pairs. It runs in the browser (§9.2). Values can be single values or distributions; the grid always shows one value, the top one for a distribution (<a class="qref" href="#q-output">Q10</a>).</p>
         </div>
 
-        <h3 class="sub" id="schema"><span class="num">4.7</span>Schema v3</h3>
-        <div class="prose"><p>Saved algorithms are JSON, validated by <span class="mono">schema/algorithm-hypothesis.v3.json</span> and shared by workbench (<span class="mono">types/algorithmHypothesis.ts</span>) and Python. Version 3 has the current primitives, <code>specialTokens</code>, saved <code>inputs</code>, and each variable's optional <code>color</code> and <code>tags</code>. Three variables of the positional example, without their color and tags, and one of the mixed example with them:</p></div>
+        <h3 class="sub" id="schema"><span class="num">4.7</span>Schema v4</h3>
+        <div class="prose"><p>Saved algorithms are JSON, validated by <span class="mono">schema/algorithm-hypothesis.v4.json</span> and shared by workbench (<span class="mono">types/algorithmHypothesis.ts</span>) and Python. Version 3 brought the current primitives, <code>specialTokens</code>, saved <code>inputs</code>, and each variable's optional <code>color</code> and <code>tags</code>; version 4 makes Mixture a linear combination of answers. Three variables of the positional example, without their color and tags, and one of the mixed example with them:</p></div>
 <pre class="code-static mono"><code>{
-  "schema": "algorithm-hypothesis/v3",
+  "schema": "algorithm-hypothesis/v4",
   "name": "Positional",
   "grid": { "kind": "abstract", "layers": 8 },
   "template": "Ann loves ale, Joe loves jam, Pete loves pie, Tim loves tea. What does Tim love?",
@@ -338,7 +339,7 @@
   "color": "emerald",
   "tags": ["lexical"]
 }</code></pre>
-        <div class="prose"><p>For a primitive, <code>type</code> is inferred and saved for readers of the file; for a custom function it is the declared type. The editor upgrades older algorithms when it opens them: v1 glyphs go, Pointer and Token identity become Copy, and Lookup, Dereference and the old Position ID become custom functions with their old source, so they compute what they did. The Python package refuses older schemas and asks for a fresh export.</p></div>
+        <div class="prose"><p>For a primitive, <code>type</code> is inferred and saved for readers of the file; for a custom function it is the declared type. The editor upgrades older algorithms when it opens them: v1 glyphs go, Pointer and Token identity become Copy, and Lookup, Dereference, the old Position ID and v3's Eq. 2 Mixture become custom functions with their old source, so they compute what they did. Download and <em>Open, From file</em> do the same. The Python package reads v3 algorithms that don't use Mixture, and asks for a fresh export of anything older.</p></div>
         <div class="prose"><p>An intervention is recorded the way Patch Lens records one: <code>{ sourceLayer, sourceToken, targetLayer, targetToken }</code>.</p></div>
       </section>
 
@@ -380,7 +381,7 @@
           <p>Two inputs, two grids, one drag: the Patch Lens gesture applied to the algorithm. Dropping a source cell on a target cell runs an interchange intervention. A third grid, the <em>counterfactual</em>, tints every changed value purple, and the summary shows the counterfactual output next to the target's own output.</p>
           <p>It differs from Patch Lens in two ways. The cells hold named values rather than logit-lens readouts, so the summary can say exactly what was swapped (<code>P: 4 → 2</code>) and why the output moved. And because an intervention costs microseconds, the summary also runs the same intervention on every saved algorithm. That table is the paper's argument at a glance: one drag, three counterfactual outputs.</p>
           <p>Only variables with the same name are swapped (<a class="qref" href="#q-cross">Q9</a>). A drag between cells that share no variable is refused, with a message.</p>
-          <p><strong>Built in P4.</strong> In workbench, <em>Intervene</em> switches the chart to this view. The source and target inputs come from the algorithm's saved inputs or the examples, and a button swaps them. The three grids scroll together, so the intervention arrow (cyan dot at the source, pink at the target) stays attached. Clicking a cell picks it, which also works on touch screens; the token row is the embedding layer. The table runs the intervention on this algorithm, and on the saved version of every saved algorithm in the workspace with the same grid, with “no swap” where the cells share no variable. The inputs and the intervention are saved with the chart, so a reload restores them. Custom functions run in Python here too.</p>
+          <p><strong>Built in P4.</strong> In workbench, <em>Intervene</em> switches the chart to this view, with every variable in black (colors are for editing). The source and target inputs come from the algorithm's saved inputs or the examples, and a button swaps them. The three grids scroll together, so the intervention arrow (cyan dot at the source, pink at the target) stays attached. Clicking a cell picks it, which also works on touch screens; the token row is the embedding layer. The table runs the intervention on this algorithm, and on the saved version of every saved algorithm in the workspace with the same grid, with “no swap” where the cells share no variable. The inputs and the intervention are saved with the chart, so a reload restores them. Custom functions run in Python here too.</p>
         </div>
         <p class="mock-caption"><b>Mockup 2</b><span class="live">Live</span><span>The design for P4, now built in workbench. Opens with the paper's intervention applied: last token, L5.</span></p>
         <div class="mock" id="mock-cell-intervention" aria-label="Cell intervention mockup"></div>
@@ -625,7 +626,7 @@ print(compiled.source)   # the generated @mechanism, with P__L6 = V(P, ...) rela
                   <li>Open <span class="mono">answer</span>: the same Retrieve over different bindings.</li>
                   <li>Load the reflexive algorithm, and save it.</li>
                   <li>Open <span class="mono">q_ptr</span>, above the repeated Tim: the answer is fetched early.</li>
-                  <li>Load the mixed algorithm, unsaved: the last token stores P, L and R, and all predict tea.</li>
+                  <li>Load the mixed algorithm, unsaved: the exact union of the three. The last token stores P, L and R, and at L6 each algorithm's answer, combined linearly at L7 (equal weights); all predict tea.</li>
                   <li>Back to positional, in <em>Intervene</em>.</li>
                   <li>Intervene on P (L5): jam / ale / pie.</li>
                   <li>Intervene on the answer (L7): pie everywhere.</li>
@@ -675,7 +676,7 @@ print(compiled.source)   # the generated @mechanism, with P__L6 = V(P, ...) rela
               <tr><td>Variables land on the wrong token</td><td>Open (Q1)</td><td>Drag to fix; a warning when the prompt and template differ in length; position-detecting primitives later.</td></tr>
               <tr><td>Too many arrows at 20 groups</td><td>Open</td><td>Density rules, focus, hiding unfocused tokens; arrows from the recall point are shorter than arrows from birth; families of variables later.</td></tr>
               <tr><td>Local dev on Ubuntu's Node 18</td><td>Found in P2</td><td>Its better-sqlite3 ABI has no prebuilt binary. Run the dev server on Node 20, or point workbench at Postgres.</td></tr>
-              <tr><td>Illustrative weights read as results</td><td>Labelled</td><td>The mixed example's weights are made up, and the walkthrough says so; the paper reports its fitted weights only as plots.</td></tr>
+              <tr><td>Illustrative weights read as results</td><td>Labelled</td><td>The mixed example weighs the three answers equally, as an illustration, and the walkthrough says so; the paper reports its fitted weights only as plots.</td></tr>
             </tbody>
           </table>
         </div>

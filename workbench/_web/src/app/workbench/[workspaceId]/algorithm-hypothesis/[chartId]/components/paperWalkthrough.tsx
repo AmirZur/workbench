@@ -19,6 +19,8 @@ import type { WalkthroughStep } from "./Walkthrough";
  */
 
 export const WALKTHROUGH_GRID: AlgorithmGrid = { kind: "abstract", layers: 8 };
+/** Bumped when the steps or algorithms change, so saved progress restarts. */
+export const WALKTHROUGH_VERSION = 2;
 export const WALKTHROUGH_TARGET = EXAMPLE_PROMPTS[0].text; // … What does Tim love?
 const SOURCE = EXAMPLE_PROMPTS[1].text; // … What does Ann love?
 const LAST = tokenizeAbstract(WALKTHROUGH_TARGET).length - 1;
@@ -74,6 +76,7 @@ export function paperWalkthroughSteps(c: PaperWalkthroughContext): WalkthroughSt
     const pLayer = layerOf("positional", "P", 5);
     const answerLayer = layerOf("positional", "answer", 7);
     const qLayer = layerOf("reflexive", "q_ptr", 3);
+    const mixedAnswersLayer = layerOf("mixed", "pos_answer", 6);
     const at = (layer: number) => ({
         sourceLayer: layer,
         sourceToken: LAST,
@@ -151,8 +154,8 @@ export function paperWalkthroughSteps(c: PaperWalkthroughContext): WalkthroughSt
                         one once it loads: Intervene and Sweep compare saved algorithms.
                     </p>
                     <p>
-                        Variables only the positional algorithm uses are <Color kind="positional" />
-                        ; the ones the algorithms share stay black.
+                        Each algorithm&apos;s own variables get its color, here{" "}
+                        <Color kind="positional" />; variables the algorithms share stay black.
                     </p>
                 </>
             ),
@@ -284,11 +287,16 @@ export function paperWalkthroughSteps(c: PaperWalkthroughContext): WalkthroughSt
             body: (
                 <>
                     <p>
-                        Mixed has all three. The last token now stores three variables,{" "}
-                        <Mono>P</Mono>, <Mono>L</Mono> and <Mono>R</Mono>, one for each algorithm,
-                        and their colors together are this one&apos;s. <Mono>answer</Mono> combines
-                        them with the paper&apos;s Eq. 2 (illustrative weights, not the paper&apos;s
-                        fitted ones), and all three predict tea.
+                        Mixed is the union of the three: every variable of each, unchanged, so their
+                        colors together are this one&apos;s (the positional bindings are renamed{" "}
+                        <Mono>pos_bind</Mono>). The last token now stores <Mono>P</Mono>,{" "}
+                        <Mono>L</Mono> and <Mono>R</Mono>, one for each algorithm, and at L
+                        {mixedAnswersLayer} each algorithm&apos;s answer.
+                    </p>
+                    <p>
+                        <Mono>answer</Mono> combines the three answers linearly, with equal weights
+                        (an illustration, not the paper&apos;s fit; change them under Weights). Here
+                        all three predict tea.
                     </p>
                     <p>
                         Don&apos;t save this one, so the next steps compare the three on their own.

@@ -280,48 +280,24 @@ export const PRIMITIVES: Record<PrimitiveName, PrimitiveSpec> = {
         },
     },
     mixture: {
-        label: "Mixture (Eq. 2)",
-        slots: [
-            { name: "P", type: POSITION },
-            { name: "L", type: STRING },
-            { name: "R", type: STRING },
-            { name: "bindings", type: listOf(pairOf(STRING, STRING)) },
-        ],
+        label: "Mixture",
+        slots: [{ name: "answers", type: listOf(V) }],
         returns: STRING,
-        options: [
-            { name: "w_pos", label: "w_pos", default: 3 },
-            { name: "sigma", label: "σ", default: 0.7 },
-            { name: "w_lex", label: "w_lex", default: 2.6 },
-            { name: "w_ref", label: "w_ref", default: 2.6 },
-        ],
+        options: [{ name: "weights", label: "Weights", default: "" }],
         run(args, opts) {
-            const P = one(args, "P");
-            const L = one(args, "L");
-            const R = one(args, "R");
-            const bindings = many(args, "bindings");
-            const wPos = num(opts.w_pos, 3);
-            const sigma = num(opts.sigma, 0.7);
-            const wLex = num(opts.w_lex, 2.6);
-            const wRef = num(opts.w_ref, 2.6);
-            const scores = bindings.map((raw, i0) => {
-                const b = isPair(raw) ? raw : { key: null, value: null };
-                let s =
-                    typeof P === "number" && Number.isInteger(P)
-                        ? wPos * Math.exp(-((i0 + 1 - P) ** 2) / (2 * sigma ** 2))
-                        : 0;
-                s += eq(b.key, L) ? wLex : 0;
-                s += eq(b.value, R) ? wRef : 0;
-                return s;
-            });
-            const top = scores.length ? Math.max(...scores) : 0;
-            const weights = scores.map((s) => Math.exp(s - top));
-            const total = weights.reduce((a, b) => a + b, 0) || 1;
+            const answers = many(args, "answers");
+            const given = String(opts.weights ?? "")
+                .split(",")
+                .filter((x) => x.trim());
+            const bad = given.find((x) => !Number.isFinite(Number(x)));
+            if (bad !== undefined) return errorValue(`Weight “${bad.trim()}” isn't a number.`);
+            const w = answers.map((_, i) => (i < given.length ? Number(given[i]) : 1));
+            const total = w.reduce((a, b) => a + b, 0) || 1;
+            const p = new Map<string, number>();
+            answers.forEach((a, i) => p.set(show(a), (p.get(show(a)) ?? 0) + w[i] / total));
             return {
                 kind: "distribution",
-                items: bindings.map((b, i) => ({
-                    label: isPair(b) ? show(b.value) : "∅",
-                    p: weights[i] / total,
-                })),
+                items: [...p].map(([label, x]) => ({ label, p: x })),
             };
         },
     },

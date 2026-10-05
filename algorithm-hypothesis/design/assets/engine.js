@@ -143,7 +143,7 @@
       "index": "def index(i: Position, values: list[V]) -> V | None:\n    \"\"\"The i-th value, counting from 1.\"\"\"\n    if isinstance(i, int) and 1 <= i <= len(values):\n        return values[i - 1]\n    return None\n",
       "key_of": "def key_of(pair: Pair[K, V]) -> K | None:\n    \"\"\"The key of a key : value pair, such as the position ID of 4:Tim.\"\"\"\n    return pair.key if isinstance(pair, Pair) else None\n",
       "value_of": "def value_of(pair: Pair[K, V]) -> V | None:\n    \"\"\"The value of a key : value pair, such as the token of 4:Tim.\"\"\"\n    return pair.value if isinstance(pair, Pair) else None\n",
-      "mixture": "def mixture(\n    P: Position,\n    L: str,\n    R: str,\n    bindings: list[Pair[str, str]],\n    *,\n    w_pos: float = 3.0,\n    sigma: float = 0.7,\n    w_lex: float = 2.6,\n    w_ref: float = 2.6,\n) -> Distribution:\n    \"\"\"Eq. 2 of Gur-Arieh et al.: a Gaussian around group P, plus a bump at\n    the group whose key is L and one at the group whose value is R.\"\"\"\n    scores = []\n    for i, b in enumerate(bindings, start=1):\n        b = b if isinstance(b, Pair) else Pair(None, None)\n        s = w_pos * math.exp(-((i - P) ** 2) / (2 * sigma**2)) if isinstance(P, int) else 0.0\n        s += w_lex if L is not None and b.key == L else 0.0\n        s += w_ref if R is not None and b.value == R else 0.0\n        scores.append(s)\n    top = max(scores, default=0.0)\n    weights = [math.exp(s - top) for s in scores]\n    total = sum(weights) or 1.0\n    return Distribution(tuple((show(b.value) if isinstance(b, Pair) else \"∅\", w / total) for b, w in zip(bindings, weights)))\n",
+      "mixture": "def mixture(answers: list[V], *, weights: str = \"\") -> Distribution:\n    \"\"\"A linear combination of the answers, such as one per mechanism: each\n    answer gets its weight, and the weights of equal answers add up.\n    `weights` lists one weight per answer, separated by commas; a missing\n    weight is 1. The result is normalized to sum to 1.\"\"\"\n    w = [float(x) for x in weights.split(\",\") if x.strip()]\n    w = (w + [1.0] * len(answers))[: len(answers)]\n    total = sum(w) or 1.0\n    p: dict[str, float] = {}\n    for answer, weight in zip(answers, w):\n        p[show(answer)] = p.get(show(answer), 0.0) + weight / total\n    return Distribution(tuple(p.items()))\n",
       "constant": "def constant(*, value: str = \"\", type: str = \"string\") -> str | int | None:\n    \"\"\"A fixed value.\"\"\"\n    if value == \"\":\n        return None\n    return value if type == \"string\" else int(value)\n"
   };
 
@@ -166,11 +166,7 @@
      "value": {"kind": "var", "name": "V"}}}], "returns": {"kind": "var", "name": "K"}},
      "value_of": {"slots": [{"name": "pair", "type": {"kind": "pair", "key": {"kind": "var", "name": "K"},
      "value": {"kind": "var", "name": "V"}}}], "returns": {"kind": "var", "name": "V"}},
-     "mixture": {"slots": [{"name": "P", "type": {"kind": "position"}},
-     {"name": "L", "type": {"kind": "string"}},
-     {"name": "R", "type": {"kind": "string"}},
-     {"name": "bindings", "type": {"kind": "list", "of": {"kind": "pair", "key": {"kind": "string"},
-     "value": {"kind": "string"}}}}], "returns": {"kind": "string"}},
+     "mixture": {"slots": [{"name": "answers", "type": {"kind": "list", "of": {"kind": "var", "name": "V"}}}], "returns": {"kind": "string"}},
      "constant": {"slots": [], "returns": null}};
 
   // Each primitive: label, options, and how it runs on its flat argument
@@ -209,33 +205,17 @@
     key_of: { label: "KeyOf", py: "key_of", run: ([p]) => (p && p.kind === "pair" ? p.key : null) },
     value_of: { label: "ValueOf", py: "value_of", run: ([p]) => (p && p.kind === "pair" ? p.value : null) },
     mixture: {
-      label: "Mixture (Eq. 2)",
+      label: "Mixture",
       py: "mixture",
-      params: {
-        w_pos: { label: "w_pos", default: 3 },
-        sigma: { label: "σ", default: 0.7 },
-        w_lex: { label: "w_lex", default: 2.6 },
-        w_ref: { label: "w_ref", default: 2.6 },
-      },
-      run([P, L, R, ...bindings], p) {
-        const wPos = Number(p.w_pos ?? 3);
-        const sigma = Number(p.sigma ?? 0.7);
-        const wLex = Number(p.w_lex ?? 2.6);
-        const wRef = Number(p.w_ref ?? 2.6);
-        const scores = bindings.map((raw, i0) => {
-          const b = raw && raw.kind === "pair" ? raw : { key: null, value: null };
-          let s = typeof P === "number" ? wPos * Math.exp(-((i0 + 1 - P) ** 2) / (2 * sigma * sigma)) : 0;
-          s += eq(b.key, L) ? wLex : 0;
-          s += eq(b.value, R) ? wRef : 0;
-          return s;
-        });
-        const mx = Math.max(...scores);
-        const ex = scores.map((s) => Math.exp(s - mx));
-        const z = ex.reduce((a, b) => a + b, 0);
-        return {
-          kind: "dist",
-          items: bindings.map((b, i) => ({ label: b && b.kind === "pair" ? show(b.value) : "∅", p: ex[i] / z })),
-        };
+      params: { weights: { label: "Weights", default: "" } },
+      // A linear combination of the answers; the weights of equal answers add up.
+      run(answers, p) {
+        const given = String(p.weights ?? "").split(",").filter((x) => x.trim()).map(Number);
+        const w = answers.map((_, i) => (i < given.length && Number.isFinite(given[i]) ? given[i] : 1));
+        const total = w.reduce((a, b) => a + b, 0) || 1;
+        const mass = new Map();
+        answers.forEach((a, i) => mass.set(show(a), (mass.get(show(a)) ?? 0) + w[i] / total));
+        return { kind: "dist", items: [...mass].map(([label, x]) => ({ label, p: x })) };
       },
     },
     constant: {
@@ -624,26 +604,28 @@
   const posVars = () => PEOPLE.map((p, k) => position("pos" + (k + 1), 1, p));
   // Positional binding: the position ID copied onto the entity (KeyOf), then bound to it.
   const idVars = () => FOODS.map((f, k) => mk("id" + (k + 1), 2, f, "key_of", [R("pos" + (k + 1))]));
-  const posBind = () => FOODS.map((f, k) => mk("bind" + (k + 1), 3, f, "pair", [R("id" + (k + 1)), T(f)]));
+  const posBind = (prefix = "bind") => FOODS.map((f, k) => mk(prefix + (k + 1), 3, f, "pair", [R("id" + (k + 1)), T(f)]));
   // Lexical binding: the name itself bound to its entity.
   const lexBind = () => FOODS.map((f, k) => mk("bind" + (k + 1), 2, f, "pair", [T(PEOPLE[k]), T(f)]));
   // The recalled name gets its first mention's position ID.
   const qPos = () => position("q_pos", 3, QUERY);
   const qKey = () => mk("q_key", 3, QUERY, "copy", [T(QUERY)]);
   const qPtr = () => mk("q_ptr", 3, QUERY, "retrieve", [T(QUERY), ...ks("bind").map(R)], { match: "key" });
-  const answer = (key, match) => mk("answer", 7, LAST, "retrieve", [R(key), ...ks("bind").map(R)], { match });
+  const answer = (key, match, id = "answer", layer = 7, binds = "bind") =>
+    mk(id, layer, LAST, "retrieve", [R(key), ...ks(binds).map(R)], { match });
 
   // Each example colors and tags a variable by the one algorithm it serves.
   // Positional binds position IDs; the others bind names, which serve lexical
-  // and reflexive retrieval, so those bindings stay black, like the answer.
+  // and reflexive retrieval, so those bindings stay black, like Mixed's answer.
   const ALGORITHM_COLORS = { positional: "indigo", lexical: "emerald", reflexive: "amber" };
   function servedBy(v, kind) {
     const id = v.id;
     const tags = id.startsWith("pos") || id.startsWith("id") || id === "q_pos" || id === "P" ? ["positional"]
       : id.startsWith("bind") && kind === "positional" ? ["positional"]
-      : id === "q_key" || id === "L" ? ["lexical"]
-      : id === "q_ptr" || id === "R" ? ["reflexive"]
-      : id.startsWith("bind") ? ["lexical", "reflexive"] : [];
+      : id === "q_key" || id === "L" || id === "lex_answer" ? ["lexical"]
+      : id === "q_ptr" || id === "R" || id === "ref_answer" ? ["reflexive"]
+      : id.startsWith("bind") ? ["lexical", "reflexive"]
+      : id === "answer" && kind !== "mixed" ? [kind] : [];
     return { ...v, ...(tags.length ? { tags } : {}), ...(tags.length === 1 ? { color: ALGORITHM_COLORS[tags[0]] } : {}) };
   }
 
@@ -685,20 +667,27 @@
       id: "mixed",
       name: "Mixed",
       symbol: "ℳ",
-      blurb: "All three signals at once, combined by the paper's Eq. 2 into a distribution over the entities.",
+      blurb: "The union of the three algorithms: each computes its own answer, and the last token combines them linearly into a distribution over the entities.",
       layers: 8,
       template: PROMPTS.target,
       specials: SPECIALS,
       output: "answer",
+      // Every variable of the three, unchanged; positional's bindings renamed.
       vars: [
-        ...lexBind(),
+        ...posVars(),
+        ...idVars(),
+        ...posBind("pos_bind"),
         qPos(),
-        qKey(),
-        qPtr(),
         mk("P", 5, LAST, "key_of", [R("q_pos")]),
+        answer("P", "key", "pos_answer", 6, "pos_bind"),
+        ...lexBind(),
+        qKey(),
         mk("L", 5, LAST, "copy", [R("q_key")]),
+        answer("L", "key", "lex_answer", 6),
+        qPtr(),
         mk("R", 5, LAST, "copy", [R("q_ptr")]),
-        mk("answer", 7, LAST, "mixture", [R("P"), R("L"), R("R"), ...ks("bind").map(R)], { w_pos: 3, sigma: 0.7, w_lex: 2.6, w_ref: 2.6 }),
+        answer("R", "value", "ref_answer", 6),
+        mk("answer", 7, LAST, "mixture", [R("pos_answer"), R("lex_answer"), R("ref_answer")], { weights: "1, 1, 1" }),
       ],
     },
   };

@@ -7,7 +7,7 @@ import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { touchWorkspace } from "@/lib/queries/workspaceQueries";
 
 /**
- * Algorithm Hypothesis algorithms: workspace-scoped rows holding a schema-v3
+ * Algorithm Hypothesis algorithms: workspace-scoped rows holding a schema-v4
  * definition. Charts point at one by id, so several charts can share it.
  *
  * Each row has a working copy (`definition`, autosaved on every edit) and the

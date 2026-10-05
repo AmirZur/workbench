@@ -271,7 +271,14 @@ export function withInferredTypes(def: AlgorithmDefinition): AlgorithmDefinition
     };
 }
 
-/** Python sources of primitives that schema v3 removed, as custom functions. */
+const pyNumber = (v: string | number | undefined, fallback: number) => {
+    const n = Number(v ?? fallback);
+    const x = Number.isFinite(n) ? n : fallback;
+    return Number.isInteger(x) ? `${x}.0` : String(x);
+};
+
+/** Python sources of primitives that schema v3 removed, and of v3's Mixture
+ * (the paper's Eq. 2, which v4 replaced), as custom functions. */
 const LEGACY_SOURCES: Record<string, (options: Record<string, string | number>) => string> = {
     position_id: (o) =>
         `def compute(token, *, by=${JSON.stringify(String(o.by ?? "group"))}, delimiter=${JSON.stringify(String(o.delimiter ?? ","))}, template=()):\n    """Where the token sits in the template: its entity group (1 + the\n    delimiters before it) or its index. (The position ID of schema v2.)"""\n    if by == "token":\n        return token.index\n    return 1 + sum(1 for t in template[: token.index] if t.strip() == delimiter)\n`,
@@ -279,16 +286,20 @@ const LEGACY_SOURCES: Record<string, (options: Record<string, string | number>) 
         `def compute(key, keys, values):\n    """The value next to the first key equal to \`key\`. (Lookup, from schema v2.)"""\n    for k, v in zip(keys, values):\n        if key is not None and k == key:\n            return v\n    return None\n`,
     dereference: () =>
         `def compute(pointer, tokens):\n    """The token the pointer names, if it is in context. (Dereference, from schema v2.)"""\n    for t in tokens:\n        if pointer is not None and t == pointer:\n            return t\n    return None\n`,
+    mixture: (o) =>
+        `def compute(P, L, R, bindings, *, w_pos=${pyNumber(o.w_pos, 3)}, sigma=${pyNumber(o.sigma, 0.7)}, w_lex=${pyNumber(o.w_lex, 2.6)}, w_ref=${pyNumber(o.w_ref, 2.6)}):\n    """Eq. 2 of Gur-Arieh et al.: a Gaussian around group P, plus a bump at\n    the group whose key is L and one at the group whose value is R. (Mixture,\n    from schema v3.)"""\n    scores = []\n    for i, b in enumerate(bindings, start=1):\n        b = b if isinstance(b, Pair) else Pair(None, None)\n        s = w_pos * math.exp(-((i - P) ** 2) / (2 * sigma**2)) if isinstance(P, int) else 0.0\n        s += w_lex if L is not None and b.key == L else 0.0\n        s += w_ref if R is not None and b.value == R else 0.0\n        scores.append(s)\n    top = max(scores, default=0.0)\n    weights = [math.exp(s - top) for s in scores]\n    total = sum(weights) or 1.0\n    return Distribution(tuple((show(b.value) if isinstance(b, Pair) else "∅", w / total) for b, w in zip(bindings, weights)))\n`,
 };
 
-/** Read a stored definition, upgrading older schemas to v3. v1 had glyphs and a
+/** Read a stored definition, upgrading older schemas to v4. v1 had glyphs and a
  * `pointer` primitive; v2 had Token identity (now Copy), Lookup and
- * Dereference (now Retrieve), and a Position ID that returned a bare number.
- * Removed primitives become custom Python functions with their old source, so
- * an old algorithm computes what it did. */
+ * Dereference (now Retrieve), and a Position ID that returned a bare number;
+ * up to v3, Mixture was the paper's Eq. 2 over P, L, R and the bindings (now a
+ * linear combination of answers). Removed primitives become custom Python
+ * functions with their old source, so an old algorithm computes what it did. */
 export function upgradeDefinition(raw: unknown): AlgorithmDefinition {
     const def = raw as AlgorithmDefinition & { schema: string };
     if (def.schema === ALGORITHM_SCHEMA_ID) return def;
+    const version = Number(/v(\d+)$/.exec(def.schema ?? "")?.[1] ?? 1);
     const variables = (def.variables ?? []).map((old) => {
         const { glyph: _glyph, ...rest } = old as Variable & { glyph?: string };
         void _glyph;
@@ -303,11 +314,18 @@ export function upgradeDefinition(raw: unknown): AlgorithmDefinition {
                 function: { kind: "primitive" as const, name: "copy" as const, options: {} },
                 args: v.args.map((a) => ({ ...a, name: "x" })),
             };
-        const legacy = LEGACY_SOURCES[fn.name];
+        // v3 kept Position ID as it is now; only Mixture changed in v4.
+        const legacy = version < 3 || fn.name === "mixture" ? LEGACY_SOURCES[fn.name] : undefined;
         if (legacy)
             return {
                 ...v,
-                type: v.type ?? (fn.name === "position_id" ? { kind: "position" as const } : null),
+                type:
+                    v.type ??
+                    (fn.name === "position_id"
+                        ? { kind: "position" as const }
+                        : fn.name === "mixture"
+                          ? { kind: "string" as const }
+                          : null),
                 function: { kind: "python" as const, source: legacy(fn.options ?? {}) },
             };
         return v;
@@ -331,7 +349,7 @@ export function parseAlgorithmFile(text: string): AlgorithmDefinition {
     const schema = typeof def.schema === "string" ? def.schema : "";
     const version = /^algorithm-hypothesis\/v(\d+)$/.exec(schema);
     if (!version) throw new Error("It isn't an algorithm saved with Download.");
-    if (Number(version[1]) > 3)
+    if (Number(version[1]) > 4)
         throw new Error(`It uses ${schema}, which is newer than this version reads.`);
     const grid = (def.grid ?? {}) as Partial<AlgorithmDefinition["grid"]>;
     if (

@@ -8,7 +8,7 @@ everything else.
 | Path | What it is |
 | --- | --- |
 | `design/` | The design doc and its live mockups (published as an artifact). |
-| `schema/algorithm-hypothesis.v3.json` | JSON Schema for saved algorithms, shared by workbench and Python. v3: the current primitives, special tokens, saved inputs, and per-variable color and tags. |
+| `schema/algorithm-hypothesis.v4.json` | JSON Schema for saved algorithms, shared by workbench and Python. v4: Mixture is a linear combination of answers; v3 brought the current primitives, special tokens, saved inputs, and per-variable color and tags. |
 | `python/` | The `algorithm_hypothesis` package: schema, primitives, compilation to causalab, interventions. |
 | `golden/entity_binding.json` | The paper's algorithms, their sweeps, and golden calls of custom Python functions. Both test suites check against it. |
 | `golden/python_runtime.json` | The modules workbench's Pyodide worker loads to run custom Python functions (`values`, `vartypes`, `primitives`, `runtime`; no causalab). |
@@ -25,7 +25,7 @@ so causalab isn't a declared dependency. Clone
 git clone https://github.com/goodfire-ai/causalab ../causalab   # from the repo root
 cd algorithm-hypothesis/python
 export PYTHONPATH=src:$(cd ../../../causalab && pwd)
-uv run --group dev pytest                       # 43 tests
+uv run --group dev pytest                       # 44 tests
 ```
 
 After changing the package, run `scripts/sync-workbench.sh`: it regenerates

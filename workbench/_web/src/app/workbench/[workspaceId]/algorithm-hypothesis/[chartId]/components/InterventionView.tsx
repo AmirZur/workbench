@@ -371,6 +371,7 @@ export default function InterventionView({
                         <div onPointerDown={onSourcePointerDown}>
                             <AlgorithmGrid
                                 mode="view"
+                                plain
                                 role="source"
                                 definition={definition}
                                 tokens={source.tokens}
@@ -392,6 +393,7 @@ export default function InterventionView({
                         />
                         <AlgorithmGrid
                             mode="view"
+                            plain
                             role="target"
                             definition={definition}
                             tokens={target.tokens}
@@ -412,6 +414,7 @@ export default function InterventionView({
                         />
                         <AlgorithmGrid
                             mode="view"
+                            plain
                             role="counterfactual"
                             definition={definition}
                             tokens={target.tokens}

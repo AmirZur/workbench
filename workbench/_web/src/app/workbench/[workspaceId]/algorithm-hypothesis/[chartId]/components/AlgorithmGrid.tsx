@@ -30,7 +30,7 @@ import { arrowColor, chipColor, TypeGlyph } from "./glyphs";
  * layers it is carried through (its span). Arrows show what each variable reads,
  * leaving from where the value is recalled: the copy just below the reader.
  * Glyphs show each variable's type; color is the variable's own (black by
- * default). In the editor, drag a variable to move it; its definition stays the
+ * default), unless the grid is plain. In the editor, drag a variable to move it; its definition stays the
  * same. In "view" mode (the intervention view) the grid is read-only and its
  * cells carry data attributes the parent uses for dragging interventions.
  */
@@ -50,6 +50,8 @@ interface AlgorithmGridProps {
     outputId: string | null;
     view: AlgorithmView;
     mode?: "edit" | "view";
+    /** Every variable and arrow in black, ignoring the variables' colors. */
+    plain?: boolean;
     /** For view mode: which input this grid shows (a data attribute). */
     role?: "source" | "target" | "counterfactual";
     /** For a counterfactual grid: the run it is compared with. Values that
@@ -156,6 +158,7 @@ export function AlgorithmGrid({
     outputId,
     view,
     mode = "edit",
+    plain = false,
     role,
     baseline = null,
     marks = [],
@@ -336,7 +339,7 @@ export function AlgorithmGrid({
                         const a = copy.getBoundingClientRect();
                         x0 = a.left + a.width / 2 - gr.left;
                         yStart = y0 = a.top - gr.top;
-                        color = src.color;
+                        color = plain ? null : src.color;
                     }
                     const b = target.getBoundingClientRect();
                     const x1 = b.left + b.width / 2 - gr.left;
@@ -364,7 +367,7 @@ export function AlgorithmGrid({
             }
         }
         setArrows({ paths, w: grid.scrollWidth, h: grid.scrollHeight });
-    }, [definition, view.arrows, selectedId, vars, rd, bucketOf]);
+    }, [definition, view.arrows, selectedId, vars, rd, bucketOf, plain]);
 
     useLayoutEffect(() => {
         measure();
@@ -415,7 +418,7 @@ export function AlgorithmGrid({
         const label = view.labels === "names" ? v.name : show(value);
         const hasProblem = problemIds.has(v.id);
         const isOutput = outputId === v.id;
-        const color = chipColor(v.color);
+        const color = chipColor(plain ? null : v.color);
         const title = `${v.name}: ${describeType(type)} = ${show(value)}${isOutput ? " (output)" : ""}${
             v.tags?.length ? ` · ${v.tags.join(", ")}` : ""
         }${failed ? `\n${value.message}` : ""}${isPending(value) ? "\nPython is running…" : ""}${

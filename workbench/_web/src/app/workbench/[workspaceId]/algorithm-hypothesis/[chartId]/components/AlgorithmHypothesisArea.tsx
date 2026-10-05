@@ -46,6 +46,7 @@ import { pythonResolver, retryPython, usePythonRuntime } from "@/lib/algorithmHy
 import {
     EXAMPLE_KINDS,
     entityBindingExample,
+    nameTokens,
     type ExampleKind,
 } from "@/lib/algorithmHypothesis/presets";
 import {
@@ -69,6 +70,7 @@ import { Walkthrough } from "./Walkthrough";
 import {
     WALKTHROUGH_GRID,
     WALKTHROUGH_TARGET,
+    WALKTHROUGH_VERSION,
     paperWalkthroughSteps,
     type WalkthroughGoal,
 } from "./paperWalkthrough";
@@ -88,6 +90,12 @@ import {
 } from "./draft";
 
 const SAVE_DEBOUNCE_MS = 500;
+
+/** The same token positions, in any order. */
+function sameList(a: number[], b: number[]) {
+    const sorted = (x: number[]) => [...x].sort((p, q) => p - q).join(",");
+    return sorted(a) === sorted(b);
+}
 const CHART_AUTOSAVE_MS = 600;
 
 /**
@@ -136,7 +144,13 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
         setMode(d?.mode === "intervene" || d?.mode === "sweep" ? d.mode : "edit");
         setIntervention(d?.intervention ?? null);
         setSweep(d?.sweep ?? null);
-        setWalkthrough(d?.walkthrough ?? null);
+        // Progress through an earlier version of the walkthrough restarts.
+        const w = d?.walkthrough;
+        setWalkthrough(
+            !w || w.version === WALKTHROUGH_VERSION
+                ? (w ?? null)
+                : { version: WALKTHROUGH_VERSION, open: w.open, step: 0 },
+        );
         hydratedChart.current = chart.id;
     }, [chart]);
 
@@ -262,11 +276,19 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
     const tokenError = modelName ? (promptTokensQuery.error ?? templateTokensQuery.error) : null;
     const tokensLoading = !!modelName && promptTokensQuery.isLoading;
 
-    // A blank algorithm follows the prompt, so the first variable is placed on it.
+    // A blank algorithm follows the prompt, so the first variable is placed on
+    // it. Its special tokens are the prompt's names (on the paper's prompts)
+    // until they're marked by hand.
+    const templateTokensLoading = !!modelName && templateTokensQuery.isLoading;
     useEffect(() => {
-        if (definition && !definition.variables.length && definition.template !== prompt)
-            commit({ ...definition, template: prompt });
-    }, [definition, prompt, commit]);
+        if (!definition || definition.variables.length || tokensLoading || templateTokensLoading)
+            return;
+        const now = definition.specialTokens;
+        const byDefault = !now || sameList(now, nameTokens(templateTokens));
+        const specialTokens = byDefault ? nameTokens(tokens) : now;
+        if (definition.template !== prompt || !sameList(specialTokens, now ?? []))
+            commit({ ...definition, template: prompt, specialTokens });
+    }, [definition, prompt, tokens, templateTokens, tokensLoading, templateTokensLoading, commit]);
 
     // ---------------------------------------------------------- evaluation
 
@@ -660,7 +682,12 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
     // ------------------------------------------------------ paper walkthrough
 
     const toggleWalkthrough = () =>
-        setWalkthrough((w) => ({ ...w, open: !w?.open, step: w?.step ?? 0 }));
+        setWalkthrough((w) => ({
+            ...w,
+            version: WALKTHROUGH_VERSION,
+            open: !w?.open,
+            step: w?.step ?? 0,
+        }));
 
     const walkthroughIds = walkthrough?.algorithms ?? {};
     // The walkthrough algorithm open now, once its definition has loaded.
@@ -707,6 +734,7 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
                 : null;
             const next: WalkthroughState = {
                 ...walkthrough,
+                version: WALKTHROUGH_VERSION,
                 open: true,
                 step: walkthrough?.step ?? 0,
                 algorithms: { ...walkthroughIds, [kind]: id },

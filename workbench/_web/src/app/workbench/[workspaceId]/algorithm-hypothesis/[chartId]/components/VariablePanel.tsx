@@ -504,7 +504,12 @@ export function VariablePanel({
                                             ) : (
                                                 <Input
                                                     id={`ah-opt-${o.name}`}
-                                                    className="h-8 w-20 py-0 font-mono"
+                                                    className={cn(
+                                                        "h-8 py-0 font-mono",
+                                                        typeof o.default === "number"
+                                                            ? "w-20"
+                                                            : "w-36",
+                                                    )}
                                                     value={value}
                                                     onChange={(e) =>
                                                         setOption(o.name, e.target.value)

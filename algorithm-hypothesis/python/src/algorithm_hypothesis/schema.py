@@ -1,10 +1,11 @@
-"""Algorithm definitions (schema v3), type inference and validation rules.
+"""Algorithm definitions (schema v4), type inference and validation rules.
 
 An algorithm is a set of typed variables placed on a layers × tokens grid. The
 same JSON is saved by workbench and read here; see
-schema/algorithm-hypothesis.v3.json. Version 3 has the current primitives
+schema/algorithm-hypothesis.v4.json. Version 3 brought the current primitives
 (Position ID returns a position ID : token pair), designated special tokens,
-and per-variable color and tags.
+and per-variable color and tags; version 4 makes Mixture a linear combination
+of answers instead of the paper's Eq. 2.
 
 Rules (design doc §4.4):
   1. Arguments come from strictly lower layers.
@@ -24,7 +25,9 @@ from typing import Any
 from algorithm_hypothesis import vartypes as vt
 from algorithm_hypothesis.primitives import PRIMITIVES
 
-SCHEMA_ID = "algorithm-hypothesis/v3"
+SCHEMA_ID = "algorithm-hypothesis/v4"
+# Version 3 differs only in Mixture, so a v3 algorithm without one reads as is.
+_V3 = "algorithm-hypothesis/v3"
 EMB = -1  # the embedding row, where tokens are born
 
 RESERVED = {"tok", "raw_input", "raw_output", "render", "TEMPLATE"}
@@ -187,7 +190,8 @@ class Algorithm:
     @staticmethod
     def from_dict(d: dict) -> "Algorithm":
         schema = d.get("schema", SCHEMA_ID)
-        if schema != SCHEMA_ID:
+        uses_mixture = any(v.get("function", {}).get("name") == "mixture" for v in d.get("variables", []))
+        if schema != SCHEMA_ID and not (schema == _V3 and not uses_mixture):
             raise ValueError(f"Unsupported schema {schema!r}; expected {SCHEMA_ID!r}. Export the algorithm from the editor again.")
         return Algorithm(
             name=str(d.get("name", "Untitled")),

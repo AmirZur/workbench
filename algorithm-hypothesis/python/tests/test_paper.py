@@ -30,7 +30,7 @@ def test_target_answers_tea(kind):
 
 @pytest.mark.parametrize(
     "kind, window",
-    [("positional", "jam"), ("lexical", "ale"), ("reflexive", "pie"), ("mixed", "ale / pie")],
+    [("positional", "jam"), ("lexical", "ale"), ("reflexive", "pie")],
 )
 def test_last_token_binding_window(kind, window):
     out = sweep(kind, SOURCE, LAST)
@@ -63,9 +63,35 @@ def test_gemma_shaped_grid():
     assert all(out[layer] == "pie" for layer in range(19, 26))  # answer, then output
 
 
-def test_mixture_distribution():
-    c = compiled("mixed")
-    r = c.interchange_intervention(SOURCE, TARGET, (5, LAST), (5, LAST))
-    probs = dict(r.output.items)
-    assert round(probs["ale"], 2) == round(probs["pie"], 2) == 0.39
-    assert round(probs["jam"], 2) == 0.20
+def test_mixed_is_the_union_of_the_three():
+    """Mixed holds every variable of the three algorithms, unchanged except for
+    names that would clash, and their answers one layer below the combination."""
+    mixed = {v["id"]: v for v in entity_binding("mixed", TARGET, 8, template=PROMPTS["target"]).to_dict()["variables"]}
+    seen = set()
+    for kind, prefix in (("positional", "pos"), ("lexical", "lex"), ("reflexive", "ref")):
+        rename = {"answer": f"{prefix}_answer"}
+        if kind == "positional":
+            rename |= {f"bind{k}": f"pos_bind{k}" for k in range(1, 5)}
+
+        def ref(r):
+            return {"variable": rename.get(r["variable"], r["variable"])} if "variable" in r else r
+
+        for v in entity_binding(kind, TARGET, 8, template=PROMPTS["target"]).to_dict()["variables"]:
+            name = rename.get(v["id"], v["id"])
+            v = {**v, "id": name, "name": name, "args": [{**a, "refs": [ref(r) for r in a["refs"]]} for a in v["args"]]}
+            if name == rename["answer"]:
+                v["cell"] = {**v["cell"], "layer": 6}
+            assert mixed[name] == v
+            seen.add(name)
+    assert set(mixed) - seen == {"answer"}
+    assert mixed["answer"]["function"] == {"kind": "primitive", "name": "mixture", "options": {"weights": "1, 1, 1"}}
+
+
+def test_mixed_combines_the_three_answers():
+    out = sweep("mixed", SOURCE, LAST)
+    assert [out[layer] for layer in range(-1, 5)] == ["tea"] * 6
+    assert out[5] == "jam / ale / pie"  # P, L and R swapped: one answer each, equal weights
+    assert out[6] == out[7] == "pie"  # the three answers, then their combination
+    r = compiled("mixed").interchange_intervention(SOURCE, TARGET, (5, LAST), (5, LAST))
+    assert {label: round(p, 3) for label, p in r.output.items} == {"jam": 0.333, "ale": 0.333, "pie": 0.333}
+    assert sweep("mixed", SOURCE_COD, LAST)[5] == "jam / ale / ∅"  # the pointer finds nothing

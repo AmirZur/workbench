@@ -12,7 +12,6 @@ same functions and stores these sources; the golden tests keep them in sync.
 from __future__ import annotations
 
 import inspect
-import math
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -82,30 +81,18 @@ def value_of(pair: Pair[K, V]) -> V | None:
     return pair.value if isinstance(pair, Pair) else None
 
 
-def mixture(
-    P: Position,
-    L: str,
-    R: str,
-    bindings: list[Pair[str, str]],
-    *,
-    w_pos: float = 3.0,
-    sigma: float = 0.7,
-    w_lex: float = 2.6,
-    w_ref: float = 2.6,
-) -> Distribution:
-    """Eq. 2 of Gur-Arieh et al.: a Gaussian around group P, plus a bump at
-    the group whose key is L and one at the group whose value is R."""
-    scores = []
-    for i, b in enumerate(bindings, start=1):
-        b = b if isinstance(b, Pair) else Pair(None, None)
-        s = w_pos * math.exp(-((i - P) ** 2) / (2 * sigma**2)) if isinstance(P, int) else 0.0
-        s += w_lex if L is not None and b.key == L else 0.0
-        s += w_ref if R is not None and b.value == R else 0.0
-        scores.append(s)
-    top = max(scores, default=0.0)
-    weights = [math.exp(s - top) for s in scores]
-    total = sum(weights) or 1.0
-    return Distribution(tuple((show(b.value) if isinstance(b, Pair) else "∅", w / total) for b, w in zip(bindings, weights)))
+def mixture(answers: list[V], *, weights: str = "") -> Distribution:
+    """A linear combination of the answers, such as one per mechanism: each
+    answer gets its weight, and the weights of equal answers add up.
+    `weights` lists one weight per answer, separated by commas; a missing
+    weight is 1. The result is normalized to sum to 1."""
+    w = [float(x) for x in weights.split(",") if x.strip()]
+    w = (w + [1.0] * len(answers))[: len(answers)]
+    total = sum(w) or 1.0
+    p: dict[str, float] = {}
+    for answer, weight in zip(answers, w):
+        p[show(answer)] = p.get(show(answer), 0.0) + weight / total
+    return Distribution(tuple(p.items()))
 
 
 def constant(*, value: str = "", type: str = "string") -> str | int | None:
@@ -209,19 +196,7 @@ PRIMITIVES: dict[str, Primitive] = {
         Primitive("index", "Index", (Slot("i", vt.POSITION), Slot("values", vt.list_of(_V))), _V, (), index),
         Primitive("key_of", "KeyOf", (Slot("pair", vt.pair(_K, _V)),), _K, (), key_of),
         Primitive("value_of", "ValueOf", (Slot("pair", vt.pair(_K, _V)),), _V, (), value_of),
-        Primitive(
-            "mixture",
-            "Mixture (Eq. 2)",
-            (
-                Slot("P", vt.POSITION),
-                Slot("L", vt.STRING),
-                Slot("R", vt.STRING),
-                Slot("bindings", vt.list_of(vt.pair(vt.STRING, vt.STRING))),
-            ),
-            vt.STRING,
-            (Option("w_pos", 3.0), Option("sigma", 0.7), Option("w_lex", 2.6), Option("w_ref", 2.6)),
-            mixture,
-        ),
+        Primitive("mixture", "Mixture", (Slot("answers", vt.list_of(_V)),), vt.STRING, (Option("weights", ""),), mixture),
         Primitive(
             "constant",
             "Constant",

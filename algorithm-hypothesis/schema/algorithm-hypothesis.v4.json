@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "algorithm-hypothesis/v3",
+  "$id": "algorithm-hypothesis/v4",
   "title": "Algorithm Hypothesis algorithm",
-  "description": "An algorithm whose typed variables are placed on a transformer's layers × tokens grid. Saved by workbench; compiled to causalab by the algorithm_hypothesis package. Version 3: Position ID returns a position ID : token pair from the designated special tokens; the primitives are position_id, copy, pair, retrieve, index, key_of, value_of, mixture and constant.",
+  "description": "An algorithm whose typed variables are placed on a transformer's layers × tokens grid. Saved by workbench; compiled to causalab by the algorithm_hypothesis package. Version 4: Mixture is a linear combination of answers (version 3 had the paper's Eq. 2). Position ID returns a position ID : token pair from the designated special tokens; the primitives are position_id, copy, pair, retrieve, index, key_of, value_of, mixture and constant.",
   "type": "object",
   "required": [
     "schema",
@@ -15,7 +15,7 @@
   "additionalProperties": false,
   "properties": {
     "schema": {
-      "const": "algorithm-hypothesis/v3"
+      "const": "algorithm-hypothesis/v4"
     },
     "name": {
       "type": "string"

@@ -1,4 +1,4 @@
-"""Saved algorithms conform to schema/algorithm-hypothesis.v3.json."""
+"""Saved algorithms conform to schema/algorithm-hypothesis.v4.json."""
 
 import json
 from pathlib import Path
@@ -9,7 +9,7 @@ from algorithm_hypothesis import tokenize_abstract
 from algorithm_hypothesis.golden import PROMPTS
 from algorithm_hypothesis.presets import KINDS, entity_binding
 
-SCHEMA = json.loads((Path(__file__).resolve().parents[2] / "schema" / "algorithm-hypothesis.v3.json").read_text())
+SCHEMA = json.loads((Path(__file__).resolve().parents[2] / "schema" / "algorithm-hypothesis.v4.json").read_text())
 
 
 def test_presets_match_the_json_schema():

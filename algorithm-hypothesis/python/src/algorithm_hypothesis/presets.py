@@ -1,7 +1,7 @@
 """The paper's algorithms as presets, placed on any entity-binding prompt.
 
 Gur-Arieh, Geva & Geiger (2025), "Mixing Mechanisms": positional, lexical and
-reflexive retrieval, plus their mixture (Eq. 2). Placement finds the template's
+reflexive retrieval, plus Mixed, their union. Placement finds the template's
 tokens by text ("{person} loves {food}, ... What does {query} love?"), so the
 same preset works on abstract word tokens and on a model tokenizer's tokens.
 
@@ -16,6 +16,9 @@ itself retrieves the bound entity.
 Reflexive: the same name : entity bindings, but the query token retrieves the
 entity (a pointer to itself) early, and the last token dereferences it: it
 retrieves by value, which finds nothing if the entity isn't in context.
+Mixed: all three at once, each computing its own answer (pos_answer, lex_answer,
+ref_answer; the positional bindings become pos_bind), combined linearly into
+the answer at the last token.
 
 Matches entityBindingExample() in workbench's TypeScript engine.
 """
@@ -32,7 +35,7 @@ DESCRIPTIONS = {
     "positional": "Each name's position ID is copied onto its bound entity; the recalled name's position ID retrieves it.",
     "lexical": "Each entity is bound to its name; the recalled name itself retrieves the bound entity.",
     "reflexive": "The query retrieves a pointer to the answer entity itself, which is dereferenced at the end. Fails if the entity isn't in context.",
-    "mixed": "All three signals at once, combined by the paper's Eq. 2 into a distribution over the entities.",
+    "mixed": "The union of the three algorithms: each computes its own answer, and the last token combines them linearly into a distribution over the entities.",
 }
 
 # Each example colors a variable by the one algorithm it serves; variables
@@ -43,17 +46,19 @@ ALGORITHM_COLORS = {"positional": "indigo", "lexical": "emerald", "reflexive": "
 def _serves(var_id: str, kind: str) -> list[str]:
     """Which of the three algorithms a variable of an example serves. The
     positional example binds position IDs; the others bind names, which serve
-    both lexical and reflexive retrieval."""
+    both lexical and reflexive retrieval. Mixed's answer combines all three."""
     if var_id.startswith(("pos", "id")) or var_id in ("q_pos", "P"):
         return ["positional"]
     if var_id.startswith("bind") and kind == "positional":
         return ["positional"]
-    if var_id in ("q_key", "L"):
+    if var_id in ("q_key", "L", "lex_answer"):
         return ["lexical"]
-    if var_id in ("q_ptr", "R"):
+    if var_id in ("q_ptr", "R", "ref_answer"):
         return ["reflexive"]
     if var_id.startswith("bind"):
         return ["lexical", "reflexive"]
+    if var_id == "answer" and kind != "mixed":
+        return [kind]
     return []
 
 
@@ -151,51 +156,39 @@ def entity_binding(
         # The special tokens up to this one: the names it numbers.
         return _var(id_, layer, token, "position_id", [("token", [_tok(token)]), ("specials", [_tok(i) for i in specials if i <= token])])
 
-    def name_bindings():
-        return [_var(bind[k], bound, f, "pair", [("key", [_tok(s.people[k])]), ("value", [_tok(f)])]) for k, f in enumerate(s.foods)]
+    # Each algorithm's answer. Mixed computes all three a layer early and
+    # combines them where the others answer.
+    if kind == "mixed" and a - 1 <= last:
+        raise ValueError("The mixed example needs at least 7 layers.")
+    at = a - 1 if kind == "mixed" else a
 
-    if kind == "positional":
+    def answer(prefix: str) -> str:
+        return f"{prefix}_answer" if kind == "mixed" else "answer"
+
+    if kind in ("positional", "mixed"):
         # Copying a position ID onto the entity takes one layer (KeyOf), binding it another.
         bound_at = max(bound, names + 2)
+        pbind = bind if kind == "positional" else [f"pos_bind{k + 1}" for k in range(n)]
         vs += [position(pos[k], names, p) for k, p in enumerate(s.people)]
         vs += [_var(ids[k], names + 1, f, "key_of", [("pair", [_v(pos[k])])]) for k, f in enumerate(s.foods)]
-        vs += [_var(bind[k], bound_at, f, "pair", [("key", [_v(ids[k])]), ("value", [_tok(f)])]) for k, f in enumerate(s.foods)]
+        vs += [_var(pbind[k], bound_at, f, "pair", [("key", [_v(ids[k])]), ("value", [_tok(f)])]) for k, f in enumerate(s.foods)]
         vs.append(position("q_pos", q, s.query))
         vs.append(_var("P", last, s.last, "key_of", [("pair", [_v("q_pos")])]))
-        vs.append(_var("answer", a, s.last, "retrieve", [("key", [_v("P")]), ("pairs", [_v(x) for x in bind])], match="key"))
-    else:
-        vs += name_bindings()
-        if kind == "mixed":
-            vs.append(position("q_pos", q, s.query))
-        if kind in ("lexical", "mixed"):
-            vs.append(_var("q_key", q, s.query, "copy", [("x", [_tok(s.query)])]))
-        if kind in ("reflexive", "mixed"):
-            vs.append(_var("q_ptr", q, s.query, "retrieve", [("key", [_tok(s.query)]), ("pairs", [_v(x) for x in bind])], match="key"))
-        if kind == "mixed":
-            vs.append(_var("P", last, s.last, "key_of", [("pair", [_v("q_pos")])]))
-        if kind in ("lexical", "mixed"):
-            vs.append(_var("L", last, s.last, "copy", [("x", [_v("q_key")])]))
-        if kind in ("reflexive", "mixed"):
-            vs.append(_var("R", last, s.last, "copy", [("x", [_v("q_ptr")])]))
-        if kind == "lexical":
-            vs.append(_var("answer", a, s.last, "retrieve", [("key", [_v("L")]), ("pairs", [_v(x) for x in bind])], match="key"))
-        elif kind == "reflexive":
-            # Dereference: the bound entity equal to R, if there is one.
-            vs.append(_var("answer", a, s.last, "retrieve", [("key", [_v("R")]), ("pairs", [_v(x) for x in bind])], match="value"))
-        else:
-            vs.append(
-                _var(
-                    "answer",
-                    a,
-                    s.last,
-                    "mixture",
-                    [("P", [_v("P")]), ("L", [_v("L")]), ("R", [_v("R")]), ("bindings", [_v(x) for x in bind])],
-                    w_pos=3.0,
-                    sigma=0.7,
-                    w_lex=2.6,
-                    w_ref=2.6,
-                )
-            )
+        vs.append(_var(answer("pos"), at, s.last, "retrieve", [("key", [_v("P")]), ("pairs", [_v(x) for x in pbind])], match="key"))
+    if kind != "positional":
+        vs += [_var(bind[k], bound, f, "pair", [("key", [_tok(s.people[k])]), ("value", [_tok(f)])]) for k, f in enumerate(s.foods)]
+    if kind in ("lexical", "mixed"):
+        vs.append(_var("q_key", q, s.query, "copy", [("x", [_tok(s.query)])]))
+        vs.append(_var("L", last, s.last, "copy", [("x", [_v("q_key")])]))
+        vs.append(_var(answer("lex"), at, s.last, "retrieve", [("key", [_v("L")]), ("pairs", [_v(x) for x in bind])], match="key"))
+    if kind in ("reflexive", "mixed"):
+        vs.append(_var("q_ptr", q, s.query, "retrieve", [("key", [_tok(s.query)]), ("pairs", [_v(x) for x in bind])], match="key"))
+        vs.append(_var("R", last, s.last, "copy", [("x", [_v("q_ptr")])]))
+        # Dereference: the bound entity equal to R, if there is one.
+        vs.append(_var(answer("ref"), at, s.last, "retrieve", [("key", [_v("R")]), ("pairs", [_v(x) for x in bind])], match="value"))
+    if kind == "mixed":
+        answers = [_v(answer(p)) for p in ("pos", "lex", "ref")]
+        vs.append(_var("answer", a, s.last, "mixture", [("answers", answers)], weights="1, 1, 1"))
 
     for v in vs:
         v.tags = _serves(v.id, kind)

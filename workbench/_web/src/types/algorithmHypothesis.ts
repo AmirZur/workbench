@@ -2,12 +2,12 @@
  * Algorithm Hypothesis types.
  *
  * An algorithm is a set of typed variables placed on a layers × tokens grid.
- * The definition is schema v3 (`algorithm-hypothesis/v3`), shared with the
+ * The definition is schema v4 (`algorithm-hypothesis/v4`), shared with the
  * `algorithm_hypothesis` Python package that compiles it to causalab. Keep the
  * two in sync: the golden tests in lib/algorithmHypothesis/__tests__ check it.
  */
 
-export const ALGORITHM_SCHEMA_ID = "algorithm-hypothesis/v3";
+export const ALGORITHM_SCHEMA_ID = "algorithm-hypothesis/v4";
 
 export type PrimitiveName =
     | "position_id"
@@ -120,6 +120,8 @@ export type AlgorithmHypothesisMode = "edit" | "intervene" | "sweep";
 /** The paper walkthrough: open, on which step, the steps done, and the
  * algorithms it loaded (example kind → algorithm id). */
 export interface WalkthroughState {
+    /** Which version of the walkthrough the progress belongs to. */
+    version?: number;
     open: boolean;
     step: number;
     done?: string[];
