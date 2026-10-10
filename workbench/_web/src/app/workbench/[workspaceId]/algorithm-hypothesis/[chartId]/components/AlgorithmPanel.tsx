@@ -311,8 +311,8 @@ export function AlgorithmPanel({
                         </ul>
                     ) : (
                         <p className="text-xs text-muted-foreground">
-                            Click any cell in the grid to place a variable, or start from one of the
-                            paper&apos;s examples below.
+                            Click any cell in the grid to place a variable. The walkthrough builds
+                            the paper&apos;s examples.
                         </p>
                     )}
                 </div>

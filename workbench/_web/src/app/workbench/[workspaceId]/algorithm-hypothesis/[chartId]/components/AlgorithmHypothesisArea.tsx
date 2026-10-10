@@ -283,12 +283,24 @@ export default function AlgorithmHypothesisArea({ mobile = false }: { mobile?: b
     useEffect(() => {
         if (!definition || definition.variables.length || tokensLoading || templateTokensLoading)
             return;
+        // Right after switching algorithms, `definition` is still the previous
+        // one for a render; committing it would overwrite the new algorithm.
+        if (definitionId !== hydratedAlgorithm.current) return;
         const now = definition.specialTokens;
         const byDefault = !now || sameList(now, nameTokens(templateTokens));
         const specialTokens = byDefault ? nameTokens(tokens) : now;
         if (definition.template !== prompt || !sameList(specialTokens, now ?? []))
             commit({ ...definition, template: prompt, specialTokens });
-    }, [definition, prompt, tokens, templateTokens, tokensLoading, templateTokensLoading, commit]);
+    }, [
+        definition,
+        definitionId,
+        prompt,
+        tokens,
+        templateTokens,
+        tokensLoading,
+        templateTokensLoading,
+        commit,
+    ]);
 
     // ---------------------------------------------------------- evaluation
 
